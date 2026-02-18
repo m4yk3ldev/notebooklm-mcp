@@ -20,6 +20,9 @@
     "type": "git",
     "url": "https://github.com/m4yk3ldev/notebooklm-mcp"
   },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "commander": "^12.0.0",
