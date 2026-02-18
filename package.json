@@ -1,0 +1,35 @@
+{
+  "name": "@m4yk3ldev/notebooklm-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for Google NotebookLM — 32 tools for notebooks, sources, research, and studio content generation",
+  "type": "module",
+  "bin": {
+    "notebooklm-mcp": "./dist/cli.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": { "node": ">=18" },
+  "keywords": ["mcp", "notebooklm", "google", "ai", "model-context-protocol"],
+  "author": "m4yk3ldev",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/m4yk3ldev/notebooklm-mcp"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "commander": "^12.0.0",
+    "chrome-launcher": "^1.1.0",
+    "chrome-remote-interface": "^0.33.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.5.0",
+    "@types/node": "^20.0.0"
+  }
+}
