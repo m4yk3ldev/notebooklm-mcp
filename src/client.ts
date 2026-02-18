@@ -1,0 +1,1224 @@
+import type {
+  AuthTokens,
+  Notebook,
+  SourceSummary,
+  SourceDetail,
+  ResearchResult,
+  ResearchSource,
+  StudioArtifact,
+  QueryResponse,
+} from "./types.js";
+import {
+  RPC_IDS,
+  BASE_URL,
+  BATCHEXECUTE_PATH,
+  QUERY_PATH,
+  DEFAULT_BL,
+  USER_AGENT,
+  DEFAULT_TIMEOUT,
+  EXTENDED_TIMEOUT,
+  OWNERSHIP_MINE,
+  SOURCE_TYPES,
+  RESULT_TYPES,
+  RESEARCH_SOURCES,
+  RESEARCH_MODES,
+  STUDIO_TYPES,
+  AUDIO_FORMATS,
+  AUDIO_LENGTHS,
+  VIDEO_FORMATS,
+  VIDEO_STYLES,
+  INFOGRAPHIC_ORIENTATIONS,
+  INFOGRAPHIC_DETAILS,
+  SLIDE_DECK_FORMATS,
+  SLIDE_DECK_LENGTHS,
+  FLASHCARD_DIFFICULTIES,
+  FLASHCARD_COUNT_DEFAULT,
+  REPORT_FORMATS,
+  CHAT_GOALS,
+  CHAT_RESPONSE_LENGTHS,
+} from "./constants.js";
+import {
+  buildCookieHeader,
+  extractCsrfFromPage,
+  extractSessionIdFromPage,
+  saveTokens,
+} from "./auth.js";
+
+export class AuthenticationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AuthenticationError";
+  }
+}
+
+export class NotebookLMClient {
+  private tokens: AuthTokens;
+  private csrfToken: string;
+  private sessionId: string;
+  private conversationHistory: Map<string, unknown[]> = new Map();
+  private queryTimeout: number;
+  private reqId = 0;
+
+  constructor(tokens: AuthTokens, queryTimeout?: number) {
+    this.tokens = tokens;
+    this.csrfToken = tokens.csrf_token;
+    this.sessionId = tokens.session_id;
+    this.queryTimeout = queryTimeout ?? EXTENDED_TIMEOUT;
+  }
+
+  // ─── Core HTTP/RPC ───────────────────────────────────
+
+  private buildRequestBody(rpcId: string, params: unknown): string {
+    const paramsJson = JSON.stringify(params);
+    const fReq = JSON.stringify([[[rpcId, paramsJson, null, "generic"]]]);
+    const parts = [`f.req=${encodeURIComponent(fReq)}`];
+    if (this.csrfToken) {
+      parts.push(`at=${encodeURIComponent(this.csrfToken)}`);
+    }
+    return parts.join("&") + "&";
+  }
+
+  private buildUrl(rpcId: string, sourcePath = "/"): string {
+    const params: Record<string, string> = {
+      rpcids: rpcId,
+      "source-path": sourcePath,
+      bl: process.env.NOTEBOOKLM_BL || DEFAULT_BL,
+      hl: "en",
+      rt: "c",
+    };
+    if (this.sessionId) {
+      params["f.sid"] = this.sessionId;
+    }
+    const query = new URLSearchParams(params).toString();
+    return `${BASE_URL}${BATCHEXECUTE_PATH}?${query}`;
+  }
+
+  private buildQueryUrl(sourcePath = "/"): string {
+    this.reqId++;
+    const params: Record<string, string> = {
+      bl: process.env.NOTEBOOKLM_BL || DEFAULT_BL,
+      hl: "en",
+      _reqid: String(this.reqId),
+      rt: "c",
+    };
+    if (this.sessionId) {
+      params["f.sid"] = this.sessionId;
+    }
+    const query = new URLSearchParams(params).toString();
+    return `${BASE_URL}${QUERY_PATH}?${query}`;
+  }
+
+  private parseResponse(responseText: string): unknown[] {
+    let text = responseText;
+    if (text.startsWith(")]}'")) {
+      text = text.slice(4);
+    }
+
+    const lines = text.trim().split("\n");
+    const results: unknown[] = [];
+    let i = 0;
+
+    while (i < lines.length) {
+      const line = lines[i].trim();
+      if (!line) {
+        i++;
+        continue;
+      }
+
+      const maybeByteCount = parseInt(line, 10);
+      if (!isNaN(maybeByteCount) && String(maybeByteCount) === line) {
+        i++;
+        if (i < lines.length) {
+          try {
+            results.push(JSON.parse(lines[i]));
+          } catch {
+            // skip unparseable
+          }
+          i++;
+        }
+      } else {
+        try {
+          results.push(JSON.parse(line));
+        } catch {
+          // skip
+        }
+        i++;
+      }
+    }
+
+    return results;
+  }
+
+  private extractRpcResult(parsed: unknown[], rpcId: string): unknown {
+    for (const chunk of parsed) {
+      if (!Array.isArray(chunk)) continue;
+      for (const item of chunk) {
+        if (!Array.isArray(item) || item.length < 3) continue;
+        if (item[0] === "wrb.fr" && item[1] === rpcId) {
+          // Check for auth error (code 16)
+          if (
+            item.length > 6 &&
+            item[6] === "generic" &&
+            Array.isArray(item[5]) &&
+            item[5].includes(16)
+          ) {
+            throw new AuthenticationError(
+              "Authentication expired. Run `notebooklm-mcp auth` to re-authenticate.",
+            );
+          }
+          const resultStr = item[2];
+          if (typeof resultStr === "string") {
+            try {
+              return JSON.parse(resultStr);
+            } catch {
+              return resultStr;
+            }
+          }
+          return resultStr;
+        }
+      }
+    }
+    return null;
+  }
+
+  private async execute(
+    rpcId: string,
+    params: unknown,
+    sourcePath = "/",
+    timeout = DEFAULT_TIMEOUT,
+  ): Promise<unknown> {
+    const url = this.buildUrl(rpcId, sourcePath);
+    const body = this.buildRequestBody(rpcId, params);
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+          Origin: BASE_URL,
+          Referer: `${BASE_URL}/`,
+          Cookie: buildCookieHeader(this.tokens.cookies),
+          "X-Same-Domain": "1",
+          "User-Agent": USER_AGENT,
+        },
+        body,
+        signal: controller.signal,
+      });
+
+      const text = await response.text();
+      const parsed = this.parseResponse(text);
+
+      try {
+        return this.extractRpcResult(parsed, rpcId);
+      } catch (e) {
+        if (e instanceof AuthenticationError) {
+          // Try to refresh auth tokens
+          await this.refreshAuthTokens();
+          // Retry once
+          return this.executeOnce(rpcId, params, sourcePath, timeout);
+        }
+        throw e;
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private async executeOnce(
+    rpcId: string,
+    params: unknown,
+    sourcePath: string,
+    timeout: number,
+  ): Promise<unknown> {
+    const url = this.buildUrl(rpcId, sourcePath);
+    const body = this.buildRequestBody(rpcId, params);
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+          Origin: BASE_URL,
+          Referer: `${BASE_URL}/`,
+          Cookie: buildCookieHeader(this.tokens.cookies),
+          "X-Same-Domain": "1",
+          "User-Agent": USER_AGENT,
+        },
+        body,
+        signal: controller.signal,
+      });
+
+      const text = await response.text();
+      const parsed = this.parseResponse(text);
+      return this.extractRpcResult(parsed, rpcId);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private async refreshAuthTokens(): Promise<void> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT);
+
+    try {
+      const response = await fetch(BASE_URL, {
+        headers: {
+          Cookie: buildCookieHeader(this.tokens.cookies),
+          "User-Agent": USER_AGENT,
+          Accept: "text/html",
+        },
+        signal: controller.signal,
+      });
+
+      const html = await response.text();
+      const csrf = extractCsrfFromPage(html);
+      const sid = extractSessionIdFromPage(html);
+
+      if (csrf) this.csrfToken = csrf;
+      if (sid) this.sessionId = sid;
+
+      this.tokens.csrf_token = this.csrfToken;
+      this.tokens.session_id = this.sessionId;
+      saveTokens(this.tokens);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  // ─── Notebook Methods ────────────────────────────────
+
+  private parseTimestamp(ts: unknown): string | null {
+    if (Array.isArray(ts) && ts.length >= 1 && typeof ts[0] === "number") {
+      return new Date(ts[0] * 1000).toISOString();
+    }
+    return null;
+  }
+
+  private parseNotebook(data: unknown): Notebook {
+    const d = data as any[];
+    const sources: SourceSummary[] = [];
+    if (Array.isArray(d[1])) {
+      for (const s of d[1]) {
+        if (Array.isArray(s) && s[0]) {
+          sources.push({
+            id: Array.isArray(s[0]) ? s[0][0] : String(s[0]),
+            title: s[1] || "Untitled",
+            type: SOURCE_TYPES.getName(s[3] ?? null),
+          });
+        }
+      }
+    }
+
+    const meta = d[5] as any[] | undefined;
+    return {
+      id: d[2] || "",
+      title: d[0] || "Untitled",
+      emoji: d[3] || null,
+      sources,
+      is_shared: meta?.[1] === true,
+      ownership: meta?.[0] === OWNERSHIP_MINE ? "mine" : "shared",
+      created_at: meta ? this.parseTimestamp(meta[8]) : null,
+      modified_at: meta ? this.parseTimestamp(meta[5]) : null,
+    };
+  }
+
+  async listNotebooks(maxResults = 100): Promise<Notebook[]> {
+    const result = await this.execute(
+      RPC_IDS.LIST_NOTEBOOKS,
+      [null, 1, null, [2]],
+    );
+    if (!Array.isArray(result) || !Array.isArray(result[0])) return [];
+
+    const notebooks: Notebook[] = [];
+    for (const item of result[0]) {
+      if (Array.isArray(item)) {
+        notebooks.push(this.parseNotebook(item));
+      }
+    }
+    return notebooks.slice(0, maxResults);
+  }
+
+  async getNotebook(notebookId: string): Promise<Notebook> {
+    const result = await this.execute(
+      RPC_IDS.GET_NOTEBOOK,
+      [notebookId, null, [2], null, 0],
+      `/notebook/${notebookId}`,
+    );
+    return this.parseNotebook(result);
+  }
+
+  async createNotebook(title: string): Promise<Notebook> {
+    const result = await this.execute(RPC_IDS.CREATE_NOTEBOOK, [
+      title,
+      null,
+      null,
+      [2],
+      [1, null, null, null, null, null, null, null, null, null, [1]],
+    ]);
+    return this.parseNotebook(result);
+  }
+
+  async renameNotebook(notebookId: string, newTitle: string): Promise<void> {
+    await this.execute(
+      RPC_IDS.RENAME_NOTEBOOK,
+      [notebookId, [[null, null, null, [null, newTitle]]]],
+      `/notebook/${notebookId}`,
+    );
+  }
+
+  async deleteNotebook(notebookId: string): Promise<void> {
+    await this.execute(
+      RPC_IDS.DELETE_NOTEBOOK,
+      [notebookId],
+      `/notebook/${notebookId}`,
+    );
+  }
+
+  async describeNotebook(notebookId: string): Promise<string> {
+    const result = await this.execute(
+      RPC_IDS.GET_SUMMARY,
+      [notebookId, null, [2]],
+      `/notebook/${notebookId}`,
+    );
+    const data = result as any[];
+    return data?.[0] || "";
+  }
+
+  // ─── Source Methods ──────────────────────────────────
+
+  async addUrlSource(
+    notebookId: string,
+    url: string,
+  ): Promise<SourceSummary> {
+    const isYouTube =
+      url.toLowerCase().includes("youtube.com") ||
+      url.toLowerCase().includes("youtu.be");
+
+    const sourceData = isYouTube
+      ? [null, null, null, null, null, null, null, [url], null, null, 1]
+      : [null, null, [url], null, null, null, null, null, null, null, 1];
+
+    const result = await this.execute(
+      RPC_IDS.ADD_SOURCE,
+      [
+        [sourceData],
+        notebookId,
+        [2],
+        [1, null, null, null, null, null, null, null, null, null, [1]],
+      ],
+      `/notebook/${notebookId}`,
+      EXTENDED_TIMEOUT,
+    );
+
+    const data = result as any[];
+    const source = data?.[0]?.[0];
+    return {
+      id: Array.isArray(source?.[0]) ? source[0][0] : String(source?.[0] || ""),
+      title: source?.[1] || url,
+      type: isYouTube ? "youtube" : "web_page",
+    };
+  }
+
+  async addTextSource(
+    notebookId: string,
+    text: string,
+    title: string,
+  ): Promise<SourceSummary> {
+    const sourceData = [
+      null,
+      [title, text],
+      null,
+      2,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      1,
+    ];
+
+    const result = await this.execute(
+      RPC_IDS.ADD_SOURCE,
+      [
+        [sourceData],
+        notebookId,
+        [2],
+        [1, null, null, null, null, null, null, null, null, null, [1]],
+      ],
+      `/notebook/${notebookId}`,
+      EXTENDED_TIMEOUT,
+    );
+
+    const data = result as any[];
+    const source = data?.[0]?.[0];
+    return {
+      id: Array.isArray(source?.[0]) ? source[0][0] : String(source?.[0] || ""),
+      title: source?.[1] || title,
+      type: "pasted_text",
+    };
+  }
+
+  async addDriveSource(
+    notebookId: string,
+    documentId: string,
+    title: string,
+    mimeType: string,
+  ): Promise<SourceSummary> {
+    const sourceData = [
+      [documentId, mimeType, 1, title],
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      1,
+    ];
+
+    const result = await this.execute(
+      RPC_IDS.ADD_SOURCE,
+      [
+        [sourceData],
+        notebookId,
+        [2],
+        [1, null, null, null, null, null, null, null, null, null, [1]],
+      ],
+      `/notebook/${notebookId}`,
+      EXTENDED_TIMEOUT,
+    );
+
+    const data = result as any[];
+    const source = data?.[0]?.[0];
+    return {
+      id: Array.isArray(source?.[0]) ? source[0][0] : String(source?.[0] || ""),
+      title: source?.[1] || title,
+      type: "google_docs",
+    };
+  }
+
+  async getSource(
+    sourceId: string,
+    notebookId: string,
+  ): Promise<SourceDetail> {
+    const result = await this.execute(
+      RPC_IDS.GET_SOURCE,
+      [sourceId, notebookId, [2]],
+      `/notebook/${notebookId}`,
+    );
+    const data = result as any[];
+    return {
+      id: sourceId,
+      title: data?.[1] || "Untitled",
+      type: SOURCE_TYPES.getName(data?.[3] ?? null),
+      content: data?.[4] || null,
+      summary: null,
+      keywords: [],
+    };
+  }
+
+  async getSourceGuide(
+    sourceId: string,
+    notebookId: string,
+  ): Promise<{ summary: string; keywords: string[] }> {
+    const result = await this.execute(
+      RPC_IDS.GET_SOURCE_GUIDE,
+      [sourceId, notebookId, [2]],
+      `/notebook/${notebookId}`,
+    );
+    const data = result as any[];
+    return {
+      summary: data?.[0] || "",
+      keywords: Array.isArray(data?.[1]) ? data[1] : [],
+    };
+  }
+
+  async checkFreshness(
+    sourceId: string,
+    notebookId: string,
+  ): Promise<boolean | null> {
+    try {
+      const result = await this.execute(
+        RPC_IDS.CHECK_FRESHNESS,
+        [sourceId, notebookId],
+        `/notebook/${notebookId}`,
+      );
+      const data = result as any[];
+      return data?.[0] === true;
+    } catch {
+      return null;
+    }
+  }
+
+  async syncDrive(sourceIds: string[], notebookId: string): Promise<void> {
+    for (const sourceId of sourceIds) {
+      await this.execute(
+        RPC_IDS.SYNC_DRIVE,
+        [sourceId, notebookId],
+        `/notebook/${notebookId}`,
+        EXTENDED_TIMEOUT,
+      );
+    }
+  }
+
+  async deleteSource(sourceId: string, notebookId: string): Promise<void> {
+    await this.execute(
+      RPC_IDS.DELETE_SOURCE,
+      [sourceId, notebookId],
+      `/notebook/${notebookId}`,
+    );
+  }
+
+  // ─── Query Method ────────────────────────────────────
+
+  async query(
+    notebookId: string,
+    queryText: string,
+    sourceIds?: string[],
+    conversationId?: string,
+  ): Promise<QueryResponse> {
+    const sourcesNested = sourceIds
+      ? sourceIds.map((sid) => [[sid]])
+      : [];
+
+    const history = conversationId
+      ? this.conversationHistory.get(conversationId) || null
+      : null;
+
+    const params = [
+      sourcesNested,
+      queryText,
+      history,
+      [2, null, [1]],
+      conversationId || null,
+    ];
+
+    const fReq = JSON.stringify([null, JSON.stringify(params)]);
+    const body = `f.req=${encodeURIComponent(fReq)}&`;
+
+    const url = this.buildQueryUrl(`/notebook/${notebookId}`);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.queryTimeout);
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+          Origin: BASE_URL,
+          Referer: `${BASE_URL}/`,
+          Cookie: buildCookieHeader(this.tokens.cookies),
+          "X-Same-Domain": "1",
+          "User-Agent": USER_AGENT,
+        },
+        body,
+        signal: controller.signal,
+      });
+
+      const text = await response.text();
+      const parsed = this.parseResponse(text);
+
+      // Find the longest Type 1 answer chunk
+      let bestAnswer = "";
+      let convId: string | null = conversationId || null;
+
+      for (const chunk of parsed) {
+        if (!Array.isArray(chunk)) continue;
+        for (const item of chunk) {
+          if (!Array.isArray(item) || item.length < 3) continue;
+          if (item[0] === "wrb.fr") {
+            const resultStr = item[2];
+            if (typeof resultStr === "string") {
+              try {
+                const data = JSON.parse(resultStr);
+                if (Array.isArray(data)) {
+                  const answer = data[0];
+                  const type = data[2];
+                  if (type === 1 && typeof answer === "string" && answer.length > bestAnswer.length) {
+                    bestAnswer = answer;
+                  }
+                  if (data[4]) convId = data[4];
+                }
+              } catch {
+                // skip
+              }
+            }
+          }
+        }
+      }
+
+      // Store conversation history for follow-ups
+      if (convId) {
+        const existing = this.conversationHistory.get(convId) || [];
+        existing.push([queryText, null, 1]);
+        existing.push([bestAnswer, null, 2]);
+        this.conversationHistory.set(convId, existing);
+      }
+
+      return {
+        answer: bestAnswer,
+        conversation_id: convId,
+        sources_used: sourceIds || [],
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  // ─── Research Methods ────────────────────────────────
+
+  async startResearch(
+    notebookId: string,
+    queryText: string,
+    source = "web",
+    mode = "fast",
+  ): Promise<{ taskId: string }> {
+    const sourceCode = RESEARCH_SOURCES.getCode(source);
+    const modeCode = RESEARCH_MODES.getCode(mode);
+
+    let result: unknown;
+    if (modeCode === 5) {
+      // Deep research
+      result = await this.execute(
+        RPC_IDS.START_DEEP_RESEARCH,
+        [null, [1], [queryText, sourceCode], 5, notebookId],
+        `/notebook/${notebookId}`,
+      );
+    } else {
+      // Fast research
+      result = await this.execute(
+        RPC_IDS.START_FAST_RESEARCH,
+        [[queryText, sourceCode], null, 1, notebookId],
+        `/notebook/${notebookId}`,
+      );
+    }
+
+    const data = result as any[];
+    return { taskId: data?.[0] || "" };
+  }
+
+  async pollResearch(
+    notebookId: string,
+    taskId?: string,
+  ): Promise<ResearchResult[]> {
+    const result = await this.execute(
+      RPC_IDS.POLL_RESEARCH,
+      [null, null, notebookId],
+      `/notebook/${notebookId}`,
+    );
+
+    const data = result as any[];
+    if (!Array.isArray(data?.[0])) return [];
+
+    const results: ResearchResult[] = [];
+    for (const task of data[0]) {
+      if (!Array.isArray(task)) continue;
+      const tid = task[0];
+      if (taskId && tid !== taskId) continue;
+
+      const taskInfo = task[1] as any[];
+      const statusCode = taskInfo?.[4];
+      const statusMap: Record<number, ResearchResult["status"]> = {
+        1: "in_progress",
+        2: "completed",
+        6: "imported",
+      };
+
+      const sources: ResearchSource[] = [];
+      const sourcesArray = taskInfo?.[3]?.[0];
+      if (Array.isArray(sourcesArray)) {
+        for (const s of sourcesArray) {
+          if (Array.isArray(s)) {
+            sources.push({
+              url: s[0] || null,
+              title: s[1] || "",
+              description: s[2] || null,
+              type: RESULT_TYPES.getName(s[3] ?? null),
+            });
+          }
+        }
+      }
+
+      results.push({
+        task_id: tid,
+        status: statusMap[statusCode] || "in_progress",
+        query: taskInfo?.[1]?.[0] || "",
+        sources,
+        summary: taskInfo?.[3]?.[1] || null,
+      });
+    }
+
+    return results;
+  }
+
+  async importResearch(
+    notebookId: string,
+    taskId: string,
+    sourceIndices?: number[],
+  ): Promise<void> {
+    const indices = sourceIndices || null;
+    await this.execute(
+      RPC_IDS.IMPORT_RESEARCH,
+      [notebookId, taskId, indices],
+      `/notebook/${notebookId}`,
+      EXTENDED_TIMEOUT,
+    );
+  }
+
+  // ─── Studio Methods ──────────────────────────────────
+
+  private formatSourcesNested(sourceIds: string[]): unknown[] {
+    return sourceIds.map((sid) => [[sid]]);
+  }
+
+  private formatSourcesSimple(sourceIds: string[]): unknown[] {
+    return sourceIds.map((sid) => [sid]);
+  }
+
+  async createAudioOverview(
+    notebookId: string,
+    sourceIds: string[],
+    options: {
+      format?: string;
+      length?: string;
+      language?: string;
+      focus_prompt?: string;
+    } = {},
+  ): Promise<string> {
+    const formatCode = AUDIO_FORMATS.getCode(options.format || "deep_dive");
+    const lengthCode = AUDIO_LENGTHS.getCode(options.length || "default");
+    const sourcesNested = this.formatSourcesNested(sourceIds);
+    const sourcesSimple = this.formatSourcesSimple(sourceIds);
+
+    const audioOptions = [
+      null,
+      [
+        options.focus_prompt || null,
+        lengthCode,
+        null,
+        sourcesSimple,
+        options.language || null,
+        null,
+        formatCode,
+      ],
+    ];
+
+    const content = [
+      null,
+      null,
+      STUDIO_TYPES.getCode("audio"),
+      sourcesNested,
+      null,
+      null,
+      audioOptions,
+    ];
+
+    const result = await this.execute(
+      RPC_IDS.CREATE_STUDIO,
+      [[2], notebookId, content],
+      `/notebook/${notebookId}`,
+    );
+    const data = result as any[];
+    return data?.[0] || "";
+  }
+
+  async createVideoOverview(
+    notebookId: string,
+    sourceIds: string[],
+    options: {
+      format?: string;
+      visual_style?: string;
+      language?: string;
+      focus_prompt?: string;
+    } = {},
+  ): Promise<string> {
+    const formatCode = VIDEO_FORMATS.getCode(options.format || "explainer");
+    const styleCode = VIDEO_STYLES.getCode(
+      options.visual_style || "auto_select",
+    );
+    const sourcesNested = this.formatSourcesNested(sourceIds);
+    const sourcesSimple = this.formatSourcesSimple(sourceIds);
+
+    const videoOptions = [
+      null,
+      null,
+      [
+        sourcesSimple,
+        options.language || null,
+        options.focus_prompt || null,
+        null,
+        formatCode,
+        styleCode,
+      ],
+    ];
+
+    const content = [
+      null,
+      null,
+      STUDIO_TYPES.getCode("video"),
+      sourcesNested,
+      null,
+      null,
+      null,
+      null,
+      videoOptions,
+    ];
+
+    const result = await this.execute(
+      RPC_IDS.CREATE_STUDIO,
+      [[2], notebookId, content],
+      `/notebook/${notebookId}`,
+    );
+    const data = result as any[];
+    return data?.[0] || "";
+  }
+
+  async createInfographic(
+    notebookId: string,
+    sourceIds: string[],
+    options: {
+      orientation?: string;
+      detail_level?: string;
+      language?: string;
+      focus_prompt?: string;
+    } = {},
+  ): Promise<string> {
+    const orientationCode = INFOGRAPHIC_ORIENTATIONS.getCode(
+      options.orientation || "landscape",
+    );
+    const detailCode = INFOGRAPHIC_DETAILS.getCode(
+      options.detail_level || "standard",
+    );
+    const sourcesNested = this.formatSourcesNested(sourceIds);
+
+    const infographicOptions = [
+      [
+        options.focus_prompt || null,
+        options.language || null,
+        null,
+        orientationCode,
+        detailCode,
+      ],
+    ];
+
+    // positions 4-13 are null
+    const content: unknown[] = [
+      null,
+      null,
+      STUDIO_TYPES.getCode("infographic"),
+      sourcesNested,
+    ];
+    for (let i = 0; i < 10; i++) content.push(null);
+    content.push(infographicOptions);
+
+    const result = await this.execute(
+      RPC_IDS.CREATE_STUDIO,
+      [[2], notebookId, content],
+      `/notebook/${notebookId}`,
+    );
+    const data = result as any[];
+    return data?.[0] || "";
+  }
+
+  async createSlideDeck(
+    notebookId: string,
+    sourceIds: string[],
+    options: {
+      format?: string;
+      length?: string;
+      language?: string;
+      focus_prompt?: string;
+    } = {},
+  ): Promise<string> {
+    const formatCode = SLIDE_DECK_FORMATS.getCode(
+      options.format || "detailed_deck",
+    );
+    const lengthCode = SLIDE_DECK_LENGTHS.getCode(options.length || "default");
+    const sourcesNested = this.formatSourcesNested(sourceIds);
+
+    const slideDeckOptions = [
+      [
+        options.focus_prompt || null,
+        options.language || null,
+        formatCode,
+        lengthCode,
+      ],
+    ];
+
+    // positions 4-15 are null
+    const content: unknown[] = [
+      null,
+      null,
+      STUDIO_TYPES.getCode("slide_deck"),
+      sourcesNested,
+    ];
+    for (let i = 0; i < 12; i++) content.push(null);
+    content.push(slideDeckOptions);
+
+    const result = await this.execute(
+      RPC_IDS.CREATE_STUDIO,
+      [[2], notebookId, content],
+      `/notebook/${notebookId}`,
+    );
+    const data = result as any[];
+    return data?.[0] || "";
+  }
+
+  async createReport(
+    notebookId: string,
+    sourceIds: string[],
+    options: {
+      report_format?: string;
+      custom_prompt?: string;
+      language?: string;
+    } = {},
+  ): Promise<string> {
+    const formatName = options.report_format || "Briefing Doc";
+    const fmt = REPORT_FORMATS[formatName] || REPORT_FORMATS["Briefing Doc"];
+    const prompt =
+      formatName === "Create Your Own"
+        ? options.custom_prompt || ""
+        : fmt.prompt;
+
+    const sourcesNested = this.formatSourcesNested(sourceIds);
+    const sourcesSimple = this.formatSourcesSimple(sourceIds);
+
+    const reportOptions = [
+      null,
+      [
+        fmt.title,
+        fmt.description,
+        null,
+        sourcesSimple,
+        options.language || null,
+        prompt,
+        null,
+        true,
+      ],
+    ];
+
+    const content = [
+      null,
+      null,
+      STUDIO_TYPES.getCode("report"),
+      sourcesNested,
+      null,
+      null,
+      null,
+      reportOptions,
+    ];
+
+    const result = await this.execute(
+      RPC_IDS.CREATE_STUDIO,
+      [[2], notebookId, content],
+      `/notebook/${notebookId}`,
+    );
+    const data = result as any[];
+    return data?.[0] || "";
+  }
+
+  async createFlashcards(
+    notebookId: string,
+    sourceIds: string[],
+    difficulty = "medium",
+  ): Promise<string> {
+    const difficultyCode = FLASHCARD_DIFFICULTIES.getCode(difficulty);
+    const sourcesNested = this.formatSourcesNested(sourceIds);
+
+    const flashcardOptions = [
+      null,
+      [1, null, null, null, null, null, [difficultyCode, FLASHCARD_COUNT_DEFAULT]],
+    ];
+
+    const content = [
+      null,
+      null,
+      STUDIO_TYPES.getCode("flashcards"),
+      sourcesNested,
+      null,
+      null,
+      null,
+      null,
+      null,
+      flashcardOptions,
+    ];
+
+    const result = await this.execute(
+      RPC_IDS.CREATE_STUDIO,
+      [[2], notebookId, content],
+      `/notebook/${notebookId}`,
+    );
+    const data = result as any[];
+    return data?.[0] || "";
+  }
+
+  async createQuiz(
+    notebookId: string,
+    sourceIds: string[],
+    questionCount = 5,
+    difficulty = "medium",
+  ): Promise<string> {
+    const difficultyCode = FLASHCARD_DIFFICULTIES.getCode(difficulty);
+    const sourcesNested = this.formatSourcesNested(sourceIds);
+
+    const quizOptions = [
+      null,
+      [2, null, null, null, null, null, null, [questionCount, difficultyCode]],
+    ];
+
+    const content = [
+      null,
+      null,
+      STUDIO_TYPES.getCode("flashcards"), // shared type with flashcards
+      sourcesNested,
+      null,
+      null,
+      null,
+      null,
+      null,
+      quizOptions,
+    ];
+
+    const result = await this.execute(
+      RPC_IDS.CREATE_STUDIO,
+      [[2], notebookId, content],
+      `/notebook/${notebookId}`,
+    );
+    const data = result as any[];
+    return data?.[0] || "";
+  }
+
+  async createDataTable(
+    notebookId: string,
+    sourceIds: string[],
+    description: string,
+    language?: string,
+  ): Promise<string> {
+    const sourcesNested = this.formatSourcesNested(sourceIds);
+
+    const content: unknown[] = [
+      null,
+      null,
+      STUDIO_TYPES.getCode("data_table"),
+      sourcesNested,
+    ];
+    // Fill nulls up to position where data_table options go
+    for (let i = 0; i < 14; i++) content.push(null);
+    content.push([[description, language || null]]);
+
+    const result = await this.execute(
+      RPC_IDS.CREATE_STUDIO,
+      [[2], notebookId, content],
+      `/notebook/${notebookId}`,
+    );
+    const data = result as any[];
+    return data?.[0] || "";
+  }
+
+  async createMindMap(
+    notebookId: string,
+    sourceIds: string[],
+    title?: string,
+  ): Promise<string> {
+    const sourcesNested = this.formatSourcesNested(sourceIds);
+
+    // Step 1: Generate mind map
+    const genResult = await this.execute(
+      RPC_IDS.GENERATE_MIND_MAP,
+      [notebookId, sourcesNested, title || null],
+      `/notebook/${notebookId}`,
+    );
+
+    const genData = genResult as any[];
+    const mindMapData = genData?.[0];
+
+    // Step 2: Save mind map
+    const saveResult = await this.execute(
+      RPC_IDS.SAVE_MIND_MAP,
+      [notebookId, mindMapData, title || null],
+      `/notebook/${notebookId}`,
+    );
+
+    const saveData = saveResult as any[];
+    return saveData?.[0] || "";
+  }
+
+  async pollStudio(notebookId: string): Promise<StudioArtifact[]> {
+    const result = await this.execute(
+      RPC_IDS.POLL_STUDIO,
+      [notebookId, [2]],
+      `/notebook/${notebookId}`,
+    );
+
+    const data = result as any[];
+    if (!Array.isArray(data)) return [];
+
+    const artifacts: StudioArtifact[] = [];
+    const items = Array.isArray(data[0]) ? data[0] : data;
+
+    for (const item of items) {
+      if (!Array.isArray(item)) continue;
+      const statusMap: Record<number, StudioArtifact["status"]> = {
+        1: "pending",
+        2: "generating",
+        3: "completed",
+        4: "failed",
+      };
+
+      artifacts.push({
+        id: item[0] || "",
+        type: STUDIO_TYPES.getName(item[2] ?? null),
+        status: statusMap[item[3]] || "pending",
+        download_url: item[4] || null,
+      });
+    }
+
+    return artifacts;
+  }
+
+  async deleteStudio(
+    notebookId: string,
+    artifactId: string,
+  ): Promise<void> {
+    await this.execute(
+      RPC_IDS.DELETE_STUDIO,
+      [notebookId, artifactId],
+      `/notebook/${notebookId}`,
+    );
+  }
+
+  // ─── Chat Configure ─────────────────────────────────
+
+  async chatConfigure(
+    notebookId: string,
+    goal?: string,
+    customPrompt?: string,
+    responseLength?: string,
+  ): Promise<void> {
+    const goalCode = goal ? CHAT_GOALS.getCode(goal) : 1;
+    const lengthCode = responseLength
+      ? CHAT_RESPONSE_LENGTHS.getCode(responseLength)
+      : 1;
+
+    await this.execute(
+      RPC_IDS.PREFERENCES,
+      [notebookId, goalCode, customPrompt || null, lengthCode],
+      `/notebook/${notebookId}`,
+    );
+  }
+
+  // ─── Auth Refresh (tool) ─────────────────────────────
+
+  async refreshAuth(): Promise<void> {
+    await this.refreshAuthTokens();
+  }
+}
