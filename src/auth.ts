@@ -1,6 +1,8 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { execSync } from "node:child_process";
+import { createInterface } from "node:readline";
 import type { AuthTokens } from "./types.js";
 import { REQUIRED_COOKIES, BASE_URL } from "./constants.js";
 
@@ -149,132 +151,82 @@ To authenticate via file:
   return tokens;
 }
 
-export async function runAuthFlow(port = 9222): Promise<AuthTokens> {
-  let chromeLauncher: any;
-  let CDP: any;
-
-  try {
-    chromeLauncher = await import("chrome-launcher");
-    CDP = await import("chrome-remote-interface");
-  } catch {
-    throw new Error(
-      "chrome-launcher or chrome-remote-interface not available. " +
-        "Install them or use --file mode instead.",
-    );
-  }
-
-  console.log("Launching Chrome for authentication...");
-  console.log("Please close any existing Chrome windows first.\n");
-
-  const chrome = await chromeLauncher.launch({
-    chromeFlags: [
-      `--remote-debugging-port=${port}`,
-      "--no-first-run",
-      "--no-default-browser-check",
-      "--disable-extensions",
-      `--user-data-dir=${CHROME_PROFILE}`,
-      "--remote-allow-origins=*",
-    ],
-    startingUrl: BASE_URL,
+function readLineFromStdin(prompt: string): Promise<string> {
+  return new Promise((resolve) => {
+    const rl = createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+    rl.question(prompt, (answer: string) => {
+      rl.close();
+      resolve(answer.trim());
+    });
   });
+}
 
+function openInBrowser(url: string): void {
+  const platform = process.platform;
   try {
-    // Wait for Chrome to start
-    await new Promise((r) => setTimeout(r, 3000));
-
-    const client = await (CDP as any)({ port });
-    const { Network, Page, Runtime } = client;
-
-    await Network.enable();
-    await Page.enable();
-    await Runtime.enable();
-
-    // Navigate to NotebookLM
-    await Page.navigate({ url: BASE_URL });
-    await Page.loadEventFired();
-
-    // Check if logged in
-    const { result: urlResult } = await Runtime.evaluate({
-      expression: "window.location.href",
-    });
-    const currentUrl = urlResult.value as string;
-
-    if (
-      currentUrl.includes("accounts.google.com") ||
-      !currentUrl.includes("notebooklm.google.com")
-    ) {
-      console.log(
-        "\nPlease sign in to your Google account in the Chrome window.",
-      );
-      console.log("Waiting for login (up to 5 minutes)...\n");
-
-      // Poll for login
-      const maxWait = 300_000;
-      const pollInterval = 5_000;
-      const start = Date.now();
-
-      while (Date.now() - start < maxWait) {
-        await new Promise((r) => setTimeout(r, pollInterval));
-        const { result: checkResult } = await Runtime.evaluate({
-          expression: "window.location.href",
-        });
-        const url = checkResult.value as string;
-        if (
-          url.includes("notebooklm.google.com") &&
-          !url.includes("accounts.google.com")
-        ) {
-          console.log("Login detected!");
-          // Wait for page to fully load
-          await new Promise((r) => setTimeout(r, 3000));
-          break;
-        }
-      }
+    if (platform === "linux") {
+      execSync(`xdg-open "${url}"`, { stdio: "ignore" });
+    } else if (platform === "darwin") {
+      execSync(`open "${url}"`, { stdio: "ignore" });
+    } else if (platform === "win32") {
+      execSync(`start "" "${url}"`, { stdio: "ignore" });
     }
-
-    // Extract cookies
-    const { cookies: chromeCookies } = await Network.getCookies({
-      urls: [BASE_URL],
-    });
-
-    const cookies: Record<string, string> = {};
-    for (const cookie of chromeCookies) {
-      cookies[cookie.name] = cookie.value;
-    }
-
-    if (!validateCookies(cookies)) {
-      throw new Error(
-        "Could not extract required cookies. Make sure you're logged in.",
-      );
-    }
-
-    // Extract CSRF token and session ID from page
-    const { result: htmlResult } = await Runtime.evaluate({
-      expression: "document.documentElement.outerHTML",
-    });
-    const html = htmlResult.value as string;
-
-    const csrfToken = extractCsrfFromPage(html) || "";
-    const sessionId = extractSessionIdFromPage(html) || "";
-
-    await client.close();
-
-    const tokens: AuthTokens = {
-      cookies,
-      csrf_token: csrfToken,
-      session_id: sessionId,
-      extracted_at: Date.now() / 1000,
-    };
-
-    saveTokens(tokens);
-    console.log("\nAuthentication tokens saved successfully.");
-    console.log(
-      `Extracted ${Object.keys(cookies).length} cookies, CSRF: ${csrfToken ? "yes" : "no"}, Session: ${sessionId ? "yes" : "no"}`,
-    );
-
-    return tokens;
-  } finally {
-    await chrome.kill();
+  } catch {
+    console.log(`Could not open browser automatically. Open this URL manually:\n${url}`);
   }
+}
+
+export async function runAuthFlow(): Promise<AuthTokens> {
+  console.log("╔══════════════════════════════════════════════════════════╗");
+  console.log("║         NotebookLM MCP — Authentication Setup          ║");
+  console.log("╚══════════════════════════════════════════════════════════╝\n");
+
+  console.log("Opening NotebookLM in your browser...\n");
+  openInBrowser(BASE_URL);
+
+  console.log("Follow these steps:\n");
+  console.log("  1. NotebookLM should open in your browser (you're already logged in)");
+  console.log("  2. Press F12 to open DevTools");
+  console.log("  3. Go to the Network tab");
+  console.log("  4. Type 'batchexecute' in the filter box");
+  console.log("  5. Click on any request that appears in the list");
+  console.log("  6. In the Headers panel, find 'cookie:' under Request Headers");
+  console.log("  7. Right-click the cookie value → Copy value\n");
+  console.log("  Tip: If no requests appear, refresh the page (F5) with DevTools open.\n");
+
+  const cookieStr = await readLineFromStdin("Paste the cookie value here: ");
+
+  if (!cookieStr) {
+    throw new Error("No cookie string provided.");
+  }
+
+  const cookies = parseCookieString(cookieStr);
+
+  if (!validateCookies(cookies)) {
+    console.log("\n❌ Missing required cookies.");
+    console.log(`   Need: ${REQUIRED_COOKIES.join(", ")}`);
+    console.log(`   Got:  ${Object.keys(cookies).join(", ")}`);
+    throw new Error("Invalid cookie string. Make sure you copied the full cookie value.");
+  }
+
+  const tokens: AuthTokens = {
+    cookies,
+    csrf_token: "",
+    session_id: "",
+    extracted_at: Date.now() / 1000,
+  };
+
+  saveTokens(tokens);
+
+  console.log(`\n✅ Authentication saved successfully!`);
+  console.log(`   ${Object.keys(cookies).length} cookies extracted`);
+  console.log(`   Stored in: ~/.notebooklm-mcp/auth.json`);
+  console.log(`\n   CSRF token and session ID will be auto-extracted on first use.`);
+
+  return tokens;
 }
 
 export function showTokens(): void {

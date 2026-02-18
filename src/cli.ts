@@ -24,24 +24,21 @@ program
 
 program
   .command("auth")
-  .description("Authenticate with NotebookLM via Chrome")
-  .option("--port <port>", "Chrome DevTools port", "9222")
-  .option("--file [path]", "Import cookies from file")
-  .option("--show-tokens", "Show cached tokens (no secrets)")
-  .option("--no-auto-launch", "Don't launch Chrome automatically")
+  .description("Authenticate with NotebookLM (opens browser, you paste cookies)")
+  .option("--file <path>", "Import cookies from a file instead")
+  .option("--show-tokens", "Show cached token info (no secrets)")
   .action(async (opts) => {
     if (opts.showTokens) {
       showTokens();
       return;
     }
 
-    if (opts.file !== undefined) {
-      const filePath = typeof opts.file === "string" ? opts.file : undefined;
-      await runFileImport(filePath);
+    if (opts.file) {
+      await runFileImport(opts.file);
       return;
     }
 
-    await runAuthFlow(parseInt(opts.port, 10));
+    await runAuthFlow();
   });
 
 // Default command: serve (for npx compatibility)
