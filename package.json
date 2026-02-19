@@ -14,11 +14,11 @@
   },
   "engines": { "node": ">=18" },
   "keywords": ["mcp", "notebooklm", "google", "ai", "model-context-protocol"],
-  "author": "m4ykeldev",
+  "author": "m4yk3ldev",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/m4ykeldev/notebooklm-mcp"
+    "url": "https://github.com/m4yk3ldev/notebooklm-mcp"
   },
   "publishConfig": {
     "access": "public"
