@@ -13,7 +13,6 @@ jobs:
     permissions:
       contents: read
       id-token: write
-      metadata: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
