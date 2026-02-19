@@ -8,7 +8,7 @@ const program = new Command();
 program
   .name("notebooklm-mcp")
   .description("MCP server for Google NotebookLM")
-  .version("0.1.14");
+  .version("0.1.15");
 
 program
   .command("serve")
