@@ -1,6 +1,6 @@
 {
-  "name": "@m4yk3ldev/notebooklm-mcp",
-  "version": "0.1.0",
+  "name": "@m4ykeldev/notebooklm-mcp",
+  "version": "0.1.2",
   "description": "MCP server for Google NotebookLM — 32 tools for notebooks, sources, research, and studio content generation",
   "type": "module",
   "bin": {
@@ -14,14 +14,14 @@
   },
   "engines": { "node": ">=18" },
   "keywords": ["mcp", "notebooklm", "google", "ai", "model-context-protocol"],
-  "author": "m4yk3ldev",
+  "author": "m4ykeldev",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/m4yk3ldev/notebooklm-mcp"
+    "url": "https://github.com/m4ykeldev/notebooklm-mcp"
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "access": "public"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",

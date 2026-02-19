@@ -9,26 +9,20 @@ Built with the [Model Context Protocol](https://modelcontextprotocol.io) SDK for
 ### 1. Install & Run
 
 ```bash
-npx -y @m4yk3ldev/notebooklm-mcp serve
+npx -y @m4ykeldev/notebooklm-mcp serve
 ```
 
 Or install globally:
 
 ```bash
-npm install -g @m4yk3ldev/notebooklm-mcp
+npm install -g @m4ykeldev/notebooklm-mcp
 notebooklm-mcp serve
 ```
-
-> **Note:** This package is published on [GitHub Packages](https://github.com/m4yk3ldev/notebooklm-mcp/packages). You need to configure your `.npmrc` first:
->
-> ```
-> @m4yk3ldev:registry=https://npm.pkg.github.com
-> ```
 
 ### 2. Authenticate
 
 ```bash
-npx @m4yk3ldev/notebooklm-mcp auth
+npx @m4ykeldev/notebooklm-mcp auth
 ```
 
 This opens NotebookLM in your default browser (where you're already logged into Google), then guides you to copy your session cookies from DevTools and paste them in the terminal.
@@ -50,7 +44,7 @@ export NOTEBOOKLM_COOKIES="SID=xxx; HSID=xxx; SSID=xxx; APISID=xxx; SAPISID=xxx"
   "mcpServers": {
     "notebooklm": {
       "command": "npx",
-      "args": ["-y", "@m4yk3ldev/notebooklm-mcp", "serve"]
+      "args": ["-y", "@m4ykeldev/notebooklm-mcp", "serve"]
     }
   }
 }
