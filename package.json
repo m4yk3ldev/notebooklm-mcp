@@ -1,6 +1,6 @@
 {
   "name": "@m4ykeldev/notebooklm-mcp",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "description": "MCP server for Google NotebookLM — 32 tools for notebooks, sources, research, and studio content generation",
   "type": "module",
   "bin": {
