@@ -40,13 +40,13 @@
     "provenance": true
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0",
-    "commander": "^12.0.0",
-    "zod": "^3.23.0"
+    "@modelcontextprotocol/sdk": "1.26.0",
+    "commander": "12.1.0",
+    "zod": "3.25.76"
   },
   "devDependencies": {
-    "tsup": "^8.0.0",
-    "typescript": "^5.5.0",
-    "@types/node": "^20.0.0"
+    "tsup": "8.5.1",
+    "typescript": "5.9.3",
+    "@types/node": "20.19.33"
   }
 }
