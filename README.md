@@ -35,10 +35,14 @@ Tokens are cached at `~/.notebooklm-mcp/auth.json`.
 export NOTEBOOKLM_COOKIES="SID=xxx; HSID=xxx; SSID=xxx; APISID=xxx; SAPISID=xxx"
 ```
 
-### 3. Add to Your MCP Client
+## Usage Examples
 
-**Claude Code:**
+Integrate NotebookLM directly into your AI development workflow.
 
+### 🤖 AI Editors & IDEs
+
+#### **Claude Desktop / Claude Code**
+Add this to your `claude_desktop_config.json` or MCP configuration:
 ```json
 {
   "mcpServers": {
@@ -50,7 +54,37 @@ export NOTEBOOKLM_COOKIES="SID=xxx; HSID=xxx; SSID=xxx; APISID=xxx; SAPISID=xxx"
 }
 ```
 
-**Cursor / other MCP clients:** use the same command configuration.
+#### **Cursor**
+1. Go to **Settings** > **Features** > **MCP**.
+2. Click **+ Add New MCP Server**.
+3. **Name**: `NotebookLM`
+4. **Type**: `command`
+5. **Command**: `npx -y @m4ykeldev/notebooklm-mcp serve`
+
+#### **VS Code (MCP Client)**
+If you use the [MCP Client](https://marketplace.visualstudio.com/items?itemName=mcp-client.mcp-client) extension:
+1. Open your `settings.json`.
+2. Add the server configuration:
+```json
+"mcp.servers": {
+  "notebooklm": {
+    "command": "npx",
+    "args": ["-y", "@m4ykeldev/notebooklm-mcp", "serve"]
+  }
+}
+```
+
+### 💻 Command Line Interface
+
+Once authenticated, you can use the CLI for quick operations:
+
+```bash
+# Start the server with a custom timeout
+npx @m4ykeldev/notebooklm-mcp serve --query-timeout 60000
+
+# Manage authentication
+npx @m4ykeldev/notebooklm-mcp auth --show-tokens
+```
 
 ## Tools (32)
 
