@@ -8,26 +8,17 @@ on:
       - 'v*'
 
 permissions:
-  contents: read
   id-token: write
+  contents: read
 
 jobs:
   publish:
     runs-on: ubuntu-latest
-    # This environment name MUST match what you have in npm (or be empty in both)
-    environment: npm_publish 
-    permissions:
-      contents: read
-      id-token: write
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-
       - run: npm ci
-
       - run: npm run build
-
       - run: npm publish --provenance
