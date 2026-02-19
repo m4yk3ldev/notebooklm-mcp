@@ -24,4 +24,4 @@ jobs:
 
       - run: npm run build
 
-      - run: npm publish
+      - run: npm publish --provenance
