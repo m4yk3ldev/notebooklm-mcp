@@ -1,13 +1,21 @@
 name: Build & Publish
 
+name: Build & Publish
+
 on:
   push:
     tags:
       - 'v*'
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # This environment name MUST match what you have in npm (or be empty in both)
+    environment: npm_publish 
     permissions:
       contents: read
       id-token: write
