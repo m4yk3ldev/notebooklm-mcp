@@ -163,7 +163,7 @@ export class NotebookLMClient {
             item[5].includes(16)
           ) {
             throw new AuthenticationError(
-              "Authentication expired. Run `notebooklm-mcp auth` to re-authenticate.",
+              "Authentication expired. Run `npx @m4ykeldev/notebooklm-mcp auth` to re-authenticate.",
             );
           }
           const resultStr = item[2];
