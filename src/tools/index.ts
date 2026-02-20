@@ -17,28 +17,22 @@ export function registerTools(
   server: McpServer, 
   tools: McpTool<any>[], 
   getClient: (timeout?: number) => NotebookLMClient, 
-  queryTimeout?: number
+  opts?: { queryTimeout?: number, onClientReset?: () => void }
 ) {
   for (const tool of tools) {
-    if (tool.schema) {
-      server.tool(tool.name, tool.description, tool.schema, async (args) => {
-        try {
-          const result = await tool.execute(getClient(queryTimeout), args as any, { queryTimeout });
-          return { content: [{ type: "text", text: JSON.stringify({ status: "success", ...result }, null, 2) }] };
-        } catch (e) {
-          return { content: [{ type: "text", text: JSON.stringify({ status: "error", error: String(e) }, null, 2) }], isError: true };
+    const schema = tool.schema || {};
+    server.tool(tool.name, tool.description, schema, async (args: any) => {
+      try {
+        const result = await tool.execute(getClient(opts?.queryTimeout), args, { queryTimeout: opts?.queryTimeout });
+        if (result && result._client_action === "reset" && opts?.onClientReset) {
+          opts.onClientReset();
+          delete result._client_action;
         }
-      });
-    } else {
-      server.tool(tool.name, tool.description, async () => {
-        try {
-          const result = await tool.execute(getClient(queryTimeout), {} as any, { queryTimeout });
-          return { content: [{ type: "text", text: JSON.stringify({ status: "success", ...result }, null, 2) }] };
-        } catch (e) {
-          return { content: [{ type: "text", text: JSON.stringify({ status: "error", error: String(e) }, null, 2) }], isError: true };
-        }
-      });
-    }
+        return { content: [{ type: "text" as const, text: JSON.stringify({ status: "success", ...result }, null, 2) }] };
+      } catch (e) {
+        return { content: [{ type: "text" as const, text: JSON.stringify({ status: "error", error: String(e) }, null, 2) }], isError: true };
+      }
+    });
   }
 }
 
