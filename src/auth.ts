@@ -95,7 +95,7 @@ export function loadTokens(): AuthTokens {
   if (fromCache) return fromCache;
 
   throw new Error(
-    "No authentication tokens found. Run `notebooklm-mcp auth` to authenticate, " +
+    "No authentication tokens found. Run `npx @m4ykeldev/notebooklm-mcp auth` to authenticate, " +
       "or set NOTEBOOKLM_COOKIES environment variable.",
   );
 }
