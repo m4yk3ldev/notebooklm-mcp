@@ -20,8 +20,11 @@ export function registerTools(
   opts?: { queryTimeout?: number, onClientReset?: () => void }
 ) {
   for (const tool of tools) {
-    const schema = tool.schema || {};
-    server.tool(tool.name, tool.description, schema, async (args: any) => {
+    const config: any = { description: tool.description };
+    if (tool.schema) {
+      config.inputSchema = tool.schema;
+    }
+    server.registerTool(tool.name, config, async (args: any) => {
       try {
         const result = await tool.execute(getClient(opts?.queryTimeout), args, { queryTimeout: opts?.queryTimeout });
         if (result && result._client_action === "reset" && opts?.onClientReset) {
