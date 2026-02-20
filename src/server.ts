@@ -7,6 +7,7 @@ import { registerTools } from "./tools/index.js";
 import { authTools } from "./tools/auth.js";
 import { queryTools } from "./tools/query.js";
 import { researchTools } from "./tools/research.js";
+import { notebookTools } from "./tools/notebook.js";
 import {
   AUDIO_FORMATS,
   AUDIO_LENGTHS,
@@ -71,84 +72,6 @@ export function createServer(queryTimeout?: number): McpServer {
 
   // ─── Notebook Tools (6) ──────────────────────────────
 
-  server.tool(
-    "notebook_list",
-    "List all NotebookLM notebooks with metadata (title, sources count, ownership)",
-    { max_results: z.number().optional().describe("Maximum notebooks to return (default 100)") },
-    async ({ max_results }) => {
-      try {
-        const notebooks = await getClient(queryTimeout).listNotebooks(max_results);
-        return ok({ notebooks, count: notebooks.length });
-      } catch (e) { return err(e); }
-    },
-  );
-
-  server.tool(
-    "notebook_create",
-    "Create a new NotebookLM notebook",
-    { title: z.string().describe("Title for the new notebook") },
-    async ({ title }) => {
-      try {
-        const notebook = await getClient(queryTimeout).createNotebook(title);
-        return ok({ notebook });
-      } catch (e) { return err(e); }
-    },
-  );
-
-  server.tool(
-    "notebook_get",
-    "Get details of a specific notebook including its sources",
-    { notebook_id: z.string().describe("The notebook ID") },
-    async ({ notebook_id }) => {
-      try {
-        const notebook = await getClient(queryTimeout).getNotebook(notebook_id);
-        return ok({ notebook });
-      } catch (e) { return err(e); }
-    },
-  );
-
-  server.tool(
-    "notebook_describe",
-    "Get an AI-generated summary of the notebook content",
-    { notebook_id: z.string().describe("The notebook ID") },
-    async ({ notebook_id }) => {
-      try {
-        const summary = await getClient(queryTimeout).describeNotebook(notebook_id);
-        return ok({ summary });
-      } catch (e) { return err(e); }
-    },
-  );
-
-  server.tool(
-    "notebook_rename",
-    "Rename a notebook",
-    {
-      notebook_id: z.string().describe("The notebook ID"),
-      new_title: z.string().describe("New title for the notebook"),
-    },
-    async ({ notebook_id, new_title }) => {
-      try {
-        await getClient(queryTimeout).renameNotebook(notebook_id, new_title);
-        return ok({ message: `Notebook renamed to "${new_title}"` });
-      } catch (e) { return err(e); }
-    },
-  );
-
-  server.tool(
-    "notebook_delete",
-    "Delete a notebook (requires confirm=true)",
-    {
-      notebook_id: z.string().describe("The notebook ID"),
-      confirm: z.boolean().describe("Must be true to confirm deletion"),
-    },
-    async ({ notebook_id, confirm }) => {
-      if (!confirm) return pendingConfirmation("Set confirm=true to delete this notebook. This cannot be undone.");
-      try {
-        await getClient(queryTimeout).deleteNotebook(notebook_id);
-        return ok({ message: "Notebook deleted" });
-      } catch (e) { return err(e); }
-    },
-  );
 
   // ─── Source Tools (8) ────────────────────────────────
 
@@ -510,6 +433,7 @@ export function createServer(queryTimeout?: number): McpServer {
   // ─── Refactored Tool Registration ─────────────────────
   
   registerTools(server, [
+    ...notebookTools,
     ...authTools,
     ...queryTools,
     ...researchTools,
