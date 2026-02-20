@@ -8,6 +8,7 @@ import { authTools } from "./tools/auth.js";
 import { queryTools } from "./tools/query.js";
 import { researchTools } from "./tools/research.js";
 import { notebookTools } from "./tools/notebook.js";
+import { sourceTools } from "./tools/source.js";
 import {
   AUDIO_FORMATS,
   AUDIO_LENGTHS,
@@ -75,134 +76,6 @@ export function createServer(queryTimeout?: number): McpServer {
 
   // ─── Source Tools (8) ────────────────────────────────
 
-  server.tool(
-    "source_describe",
-    "Get an AI-generated summary and keywords for a source",
-    {
-      notebook_id: z.string().describe("The notebook ID"),
-      source_id: z.string().describe("The source ID"),
-    },
-    async ({ notebook_id, source_id }) => {
-      try {
-        const guide = await getClient(queryTimeout).getSourceGuide(source_id, notebook_id);
-        return ok({ summary: guide.summary, keywords: guide.keywords });
-      } catch (e) { return err(e); }
-    },
-  );
-
-  server.tool(
-    "source_get_content",
-    "Get the raw text content of a source",
-    {
-      notebook_id: z.string().describe("The notebook ID"),
-      source_id: z.string().describe("The source ID"),
-    },
-    async ({ notebook_id, source_id }) => {
-      try {
-        const source = await getClient(queryTimeout).getSource(source_id, notebook_id);
-        return ok({ source });
-      } catch (e) { return err(e); }
-    },
-  );
-
-  server.tool(
-    "notebook_add_url",
-    "Add a URL or YouTube video as a source to a notebook",
-    {
-      notebook_id: z.string().describe("The notebook ID"),
-      url: z.string().describe("URL to add (website or YouTube)"),
-    },
-    async ({ notebook_id, url }) => {
-      try {
-        const source = await getClient(queryTimeout).addUrlSource(notebook_id, url);
-        return ok({ source });
-      } catch (e) { return err(e); }
-    },
-  );
-
-  server.tool(
-    "notebook_add_text",
-    "Add pasted text as a source to a notebook",
-    {
-      notebook_id: z.string().describe("The notebook ID"),
-      text: z.string().describe("Text content to add"),
-      title: z.string().describe("Title for the text source"),
-    },
-    async ({ notebook_id, text, title }) => {
-      try {
-        const source = await getClient(queryTimeout).addTextSource(notebook_id, text, title);
-        return ok({ source });
-      } catch (e) { return err(e); }
-    },
-  );
-
-  server.tool(
-    "notebook_add_drive",
-    "Add a Google Drive document as a source",
-    {
-      notebook_id: z.string().describe("The notebook ID"),
-      document_id: z.string().describe("Google Drive document ID"),
-      title: z.string().describe("Document title"),
-      doc_type: z.string().describe("MIME type (e.g. application/vnd.google-apps.document)"),
-    },
-    async ({ notebook_id, document_id, title, doc_type }) => {
-      try {
-        const source = await getClient(queryTimeout).addDriveSource(notebook_id, document_id, title, doc_type);
-        return ok({ source });
-      } catch (e) { return err(e); }
-    },
-  );
-
-  server.tool(
-    "source_list_drive",
-    "List sources in a notebook with Drive freshness status",
-    { notebook_id: z.string().describe("The notebook ID") },
-    async ({ notebook_id }) => {
-      try {
-        const notebook = await getClient(queryTimeout).getNotebook(notebook_id);
-        const results = [];
-        for (const src of notebook.sources) {
-          const fresh = await getClient(queryTimeout).checkFreshness(src.id, notebook_id);
-          results.push({ ...src, is_fresh: fresh });
-        }
-        return ok({ sources: results });
-      } catch (e) { return err(e); }
-    },
-  );
-
-  server.tool(
-    "source_sync_drive",
-    "Sync stale Google Drive sources (requires confirm=true)",
-    {
-      notebook_id: z.string().describe("The notebook ID"),
-      source_ids: z.array(z.string()).describe("Source IDs to sync"),
-      confirm: z.boolean().describe("Must be true to confirm sync"),
-    },
-    async ({ notebook_id, source_ids, confirm }) => {
-      if (!confirm) return pendingConfirmation("Set confirm=true to sync these Drive sources.");
-      try {
-        await getClient(queryTimeout).syncDrive(source_ids, notebook_id);
-        return ok({ message: `Synced ${source_ids.length} sources` });
-      } catch (e) { return err(e); }
-    },
-  );
-
-  server.tool(
-    "source_delete",
-    "Delete a source from a notebook (requires confirm=true)",
-    {
-      notebook_id: z.string().describe("The notebook ID"),
-      source_id: z.string().describe("The source ID to delete"),
-      confirm: z.boolean().describe("Must be true to confirm deletion"),
-    },
-    async ({ notebook_id, source_id, confirm }) => {
-      if (!confirm) return pendingConfirmation("Set confirm=true to delete this source.");
-      try {
-        await getClient(queryTimeout).deleteSource(source_id, notebook_id);
-        return ok({ message: "Source deleted" });
-      } catch (e) { return err(e); }
-    },
-  );
 
   // ─── Query Tools (2) ────────────────────────────────
 
@@ -434,6 +307,7 @@ export function createServer(queryTimeout?: number): McpServer {
   
   registerTools(server, [
     ...notebookTools,
+    ...sourceTools,
     ...authTools,
     ...queryTools,
     ...researchTools,
