@@ -3,6 +3,9 @@ import { z } from "zod";
 import { NotebookLMClient } from "./client.js";
 import { loadTokens, saveTokens } from "./auth.js";
 import type { AuthTokens, ToolResult } from "./types.js";
+import { registerTools } from "./tools/index.js";
+import { authTools } from "./tools/auth.js";
+import { queryTools } from "./tools/query.js";
 import {
   AUDIO_FORMATS,
   AUDIO_LENGTHS,
@@ -279,39 +282,6 @@ export function createServer(queryTimeout?: number): McpServer {
 
   // ─── Query Tools (2) ────────────────────────────────
 
-  server.tool(
-    "notebook_query",
-    "Ask a question about the sources in a notebook",
-    {
-      notebook_id: z.string().describe("The notebook ID"),
-      query: z.string().describe("Question to ask"),
-      source_ids: z.array(z.string()).optional().describe("Specific source IDs to query (omit for all)"),
-      conversation_id: z.string().optional().describe("Conversation ID for follow-up questions"),
-    },
-    async ({ notebook_id, query, source_ids, conversation_id }) => {
-      try {
-        const response = await getClient(queryTimeout).query(notebook_id, query, source_ids, conversation_id);
-        return ok({ answer: response.answer, conversation_id: response.conversation_id });
-      } catch (e) { return err(e); }
-    },
-  );
-
-  server.tool(
-    "chat_configure",
-    "Configure chat behavior (goal and response length)",
-    {
-      notebook_id: z.string().describe("The notebook ID"),
-      goal: z.string().optional().describe(`Chat goal: ${CHAT_GOALS.optionsStr()}`),
-      custom_prompt: z.string().optional().describe("Custom prompt (when goal=custom)"),
-      response_length: z.string().optional().describe(`Response length: ${CHAT_RESPONSE_LENGTHS.optionsStr()}`),
-    },
-    async ({ notebook_id, goal, custom_prompt, response_length }) => {
-      try {
-        await getClient(queryTimeout).chatConfigure(notebook_id, goal, custom_prompt, response_length);
-        return ok({ message: "Chat configured" });
-      } catch (e) { return err(e); }
-    },
-  );
 
   // ─── Research Tools (3) ──────────────────────────────
 
@@ -583,52 +553,15 @@ export function createServer(queryTimeout?: number): McpServer {
     },
   );
 
-  // ─── Auth Tools (2) ─────────────────────────────────
-
-  server.tool(
-    "refresh_auth",
-    "Reload authentication tokens (re-extract CSRF and session from page)",
-    {},
-    async () => {
-      try {
-        await getClient(queryTimeout).refreshAuth();
-        return ok({ message: "Authentication tokens refreshed" });
-      } catch (e) { return err(e); }
-    },
-  );
-
-  server.tool(
-    "save_auth_tokens",
-    "Manually save authentication cookies (fallback method — prefer using CLI auth)",
-    {
-      cookies: z.string().optional().describe("Cookie header string (SID=xxx; HSID=yyy; ...)"),
-      csrf_token: z.string().optional().describe("CSRF token"),
-      session_id: z.string().optional().describe("Session ID"),
-    },
-    async ({ cookies: cookieStr, csrf_token, session_id }) => {
-      try {
-        const cookieMap: Record<string, string> = {};
-        if (cookieStr) {
-          for (const part of cookieStr.split(";")) {
-            const eq = part.indexOf("=");
-            if (eq > 0) {
-              cookieMap[part.slice(0, eq).trim()] = part.slice(eq + 1).trim();
-            }
-          }
-        }
-        const tokens: AuthTokens = {
-          cookies: cookieMap,
-          csrf_token: csrf_token || "",
-          session_id: session_id || "",
-          extracted_at: Date.now() / 1000,
-        };
-        saveTokens(tokens);
-        // Reset client to use new tokens
-        client = null;
-        return ok({ message: "Tokens saved. Client will use new tokens on next request." });
-      } catch (e) { return err(e); }
-    },
-  );
+  // ─── Refactored Tool Registration ─────────────────────
+  
+  registerTools(server, [
+    ...authTools,
+    ...queryTools,
+  ], getClient, { 
+    queryTimeout,
+    onClientReset: () => { client = null; }
+  });
 
   return server;
 }
