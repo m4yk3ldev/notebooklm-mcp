@@ -6,6 +6,7 @@ import type { AuthTokens, ToolResult } from "./types.js";
 import { registerTools } from "./tools/index.js";
 import { authTools } from "./tools/auth.js";
 import { queryTools } from "./tools/query.js";
+import { researchTools } from "./tools/research.js";
 import {
   AUDIO_FORMATS,
   AUDIO_LENGTHS,
@@ -285,53 +286,6 @@ export function createServer(queryTimeout?: number): McpServer {
 
   // ─── Research Tools (3) ──────────────────────────────
 
-  server.tool(
-    "research_start",
-    "Start a web or Drive research task",
-    {
-      notebook_id: z.string().describe("The notebook ID"),
-      query: z.string().describe("Research query"),
-      source: z.string().optional().describe(`Source: ${RESEARCH_SOURCES.optionsStr()} (default: web)`),
-      mode: z.string().optional().describe(`Mode: ${RESEARCH_MODES.optionsStr()} (default: fast)`),
-    },
-    async ({ notebook_id, query, source, mode }) => {
-      try {
-        const result = await getClient(queryTimeout).startResearch(notebook_id, query, source, mode);
-        return ok({ task_id: result.taskId, message: "Research started. Use research_status to poll progress." });
-      } catch (e) { return err(e); }
-    },
-  );
-
-  server.tool(
-    "research_status",
-    "Check the status of research tasks",
-    {
-      notebook_id: z.string().describe("The notebook ID"),
-      task_id: z.string().optional().describe("Specific task ID to check (omit for all)"),
-    },
-    async ({ notebook_id, task_id }) => {
-      try {
-        const results = await getClient(queryTimeout).pollResearch(notebook_id, task_id);
-        return ok({ results });
-      } catch (e) { return err(e); }
-    },
-  );
-
-  server.tool(
-    "research_import",
-    "Import discovered sources from a research task into the notebook",
-    {
-      notebook_id: z.string().describe("The notebook ID"),
-      task_id: z.string().describe("Research task ID"),
-      source_indices: z.array(z.number()).optional().describe("Specific source indices to import (omit for all)"),
-    },
-    async ({ notebook_id, task_id, source_indices }) => {
-      try {
-        await getClient(queryTimeout).importResearch(notebook_id, task_id, source_indices);
-        return ok({ message: "Research sources imported" });
-      } catch (e) { return err(e); }
-    },
-  );
 
   // ─── Studio Creation Tools (10) ─────────────────────
 
@@ -558,6 +512,7 @@ export function createServer(queryTimeout?: number): McpServer {
   registerTools(server, [
     ...authTools,
     ...queryTools,
+    ...researchTools,
   ], getClient, { 
     queryTimeout,
     onClientReset: () => { client = null; }
