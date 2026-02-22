@@ -25,9 +25,17 @@ notebooklm-mcp serve
 npx @m4ykeldev/notebooklm-mcp auth
 ```
 
-This opens NotebookLM in your default browser (where you're already logged into Google), then guides you to copy your session cookies from DevTools and paste them in the terminal.
+This opens a dedicated Google Chrome instance (managed by the MCP server). If you're already logged in there, the server will **automatically** grab your session cookies. If not, simply log in once and it will handle the rest.
 
 Tokens are cached at `~/.notebooklm-mcp/auth.json`.
+
+**Manual Authentication**
+
+If you don't use Chrome or the automated flow fails:
+```bash
+npx @m4ykeldev/notebooklm-mcp auth --manual
+```
+This flow guides you through copying cookies from your own browser's DevTools.
 
 **Alternative: environment variables**
 
@@ -169,8 +177,11 @@ npx @m4ykeldev/notebooklm-mcp auth --show-tokens
 notebooklm-mcp serve
 notebooklm-mcp serve --query-timeout 60000
 
-# Authenticate interactively
+# Authenticate interactively (automated Chrome integration)
 notebooklm-mcp auth
+
+# Authenticate manually (copy-paste cookies)
+notebooklm-mcp auth --manual
 
 # Import cookies from a file
 notebooklm-mcp auth --file cookies.txt

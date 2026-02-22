@@ -2,13 +2,14 @@ import { Command } from "commander";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createServer } from "./server.js";
 import { runAuthFlow, runFileImport, showTokens } from "./auth.js";
+import { runBrowserAuthFlow } from "./browser-auth.js";
 
 const program = new Command();
 
 program
   .name("notebooklm-mcp")
   .description("MCP server for Google NotebookLM")
-  .version("0.1.17");
+  .version("0.1.20");
 
 program
   .command("serve")
@@ -24,7 +25,8 @@ program
 
 program
   .command("auth")
-  .description("Authenticate with NotebookLM (opens browser, you paste cookies)")
+  .description("Authenticate with NotebookLM (automated Chrome integration)")
+  .option("--manual", "Use manual cookie copy-paste instead")
   .option("--file <path>", "Import cookies from a file instead")
   .option("--show-tokens", "Show cached token info (no secrets)")
   .action(async (opts) => {
@@ -38,7 +40,18 @@ program
       return;
     }
 
-    await runAuthFlow();
+    if (opts.manual) {
+      await runAuthFlow();
+      return;
+    }
+
+    try {
+      await runBrowserAuthFlow();
+    } catch (error) {
+      console.log(`\n⚠️ Smart Authentication failed: ${(error as Error).message}`);
+      console.log("Falling back to manual authentication flow...\n");
+      await runAuthFlow();
+    }
   });
 
 // Default command: serve (for npx compatibility)
