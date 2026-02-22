@@ -4,14 +4,8 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import WebSocket from "ws";
 import type { AuthTokens } from "./types.js";
-import {
-  BASE_URL,
-  REQUIRED_COOKIES,
-} from "./constants.js";
-import {
-  validateCookies,
-  saveTokens,
-} from "./auth.js";
+import { BASE_URL, REQUIRED_COOKIES } from "./constants.js";
+import { validateCookies, saveTokens } from "./auth.js";
 
 const CDP_PORT = 9229;
 
@@ -45,7 +39,10 @@ export function findChrome(): string | null {
 
   for (const candidate of candidates) {
     try {
-      const cmd = process.platform === "win32" ? `"${candidate}" --version` : `"${candidate}" --version`;
+      const cmd =
+        process.platform === "win32"
+          ? `"${candidate}" --version`
+          : `"${candidate}" --version`;
       execSync(cmd, { stdio: "ignore" });
       return candidate;
     } catch {
@@ -61,13 +58,13 @@ async function getDebuggerUrl(port: number): Promise<string> {
     try {
       const response = await fetch(`http://localhost:${port}/json/version`);
       if (response.ok) {
-        const data = await response.json() as any;
+        const data = (await response.json()) as any;
         return data.webSocketDebuggerUrl;
       }
     } catch {
       // wait and retry
     }
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise((r) => setTimeout(r, 500));
   }
   throw new Error("Could not connect to Chrome remote debugging port.");
 }
@@ -75,31 +72,39 @@ async function getDebuggerUrl(port: number): Promise<string> {
 export async function launchChrome(headless: boolean) {
   const chromePath = findChrome();
   if (!chromePath) {
-    throw new Error("Could not find Google Chrome or Chromium. Please use manual auth.");
+    throw new Error(
+      "Could not find Google Chrome or Chromium. Please use manual auth.",
+    );
   }
 
   const userDataDir = join(homedir(), ".notebooklm-mcp", "chrome-profile");
   mkdirSync(userDataDir, { recursive: true });
 
   const args = [
+    "%U",
     `--remote-debugging-port=${CDP_PORT}`,
     `--user-data-dir=${userDataDir}`,
     "--no-first-run",
     "--no-default-browser-check",
     BASE_URL,
-    "%U",
   ];
 
   if (headless) {
     args.push("--headless=new");
   }
 
-  const chromeProcess = spawn(chromePath, args, { detached: true, stdio: "ignore" });
+  const chromeProcess = spawn(chromePath, args, {
+    detached: true,
+    stdio: "ignore",
+  });
   chromeProcess.unref();
   return chromeProcess;
 }
 
-async function extractCookiesViaCDP(timeoutMs: number, showProgress: boolean): Promise<AuthTokens> {
+async function extractCookiesViaCDP(
+  timeoutMs: number,
+  showProgress: boolean,
+): Promise<AuthTokens> {
   const wsUrl = await getDebuggerUrl(CDP_PORT);
   const ws = new WebSocket(wsUrl);
 
@@ -134,7 +139,11 @@ async function extractCookiesViaCDP(timeoutMs: number, showProgress: boolean): P
 
     ws.on("close", () => {
       cleanup();
-      reject(new Error("Browser connection closed before authentication was complete."));
+      reject(
+        new Error(
+          "Browser connection closed before authentication was complete.",
+        ),
+      );
     });
 
     ws.on("error", (err) => {
@@ -175,7 +184,7 @@ async function extractCookiesViaCDP(timeoutMs: number, showProgress: boolean): P
 export async function refreshCookiesHeadless(): Promise<AuthTokens> {
   console.log("🔄 Attempting background session refresh...");
   const chromeProcess = await launchChrome(true);
-  
+
   try {
     const tokens = await extractCookiesViaCDP(15000, false);
     console.log("✅ Background refresh successful.");
@@ -189,22 +198,24 @@ export async function refreshCookiesHeadless(): Promise<AuthTokens> {
 }
 
 export async function runBrowserAuthFlow(): Promise<AuthTokens> {
-  console.log("🚀 Launching Chrome for Smart Authentication...");
-  console.log("   (A dedicated profile will be used at ~/.notebooklm-mcp/chrome-profile)");
-  
+  console.log("✨ Initializing Smart Authentication... (Setting up a secure session)");
+  console.log(
+    "   (A dedicated profile will be used at ~/.notebooklm-mcp/chrome-profile)",
+  );
+
   const chromeProcess = await launchChrome(false);
 
   try {
-    console.log("\nWaiting for you to log in to NotebookLM...");
-    console.log("If you are already logged in, extraction will happen automatically.");
-    console.log("If not, please complete the login process in the browser window.\n");
+    console.log("\n🔓 Ready for login! If you're already signed into Google, we'll handle the rest automatically.\n");
 
     const tokens = await extractCookiesViaCDP(120000, true);
-    console.log("\n✅ Smart Authentication successful!");
+    console.log("\n✅ Connection secured! Your NotebookLM session is now synchronized.");
     return tokens;
   } catch (error) {
     if (error instanceof Error) {
-      throw new Error(`Smart Auth failed: ${error.message}\nTry manual auth instead.`);
+      throw new Error(
+        `Smart Auth failed: ${error.message}\nTry manual auth instead.`,
+      );
     }
     throw error;
   } finally {
