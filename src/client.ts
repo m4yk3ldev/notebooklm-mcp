@@ -43,6 +43,7 @@ import {
   extractSessionIdFromPage,
   saveTokens,
 } from "./auth.js";
+import { refreshCookiesHeadless } from "./browser-auth.js";
 
 export class AuthenticationError extends Error {
   constructor(message: string) {
@@ -215,10 +216,22 @@ export class NotebookLMClient {
         return this.extractRpcResult(parsed, rpcId);
       } catch (e) {
         if (e instanceof AuthenticationError) {
-          // Try to refresh auth tokens
-          await this.refreshAuthTokens();
-          // Retry once
-          return this.executeOnce(rpcId, params, sourcePath, timeout);
+          console.log("⚠️ Authentication expired. Attempting background refresh...");
+          try {
+            const newTokens = await refreshCookiesHeadless();
+            this.tokens = newTokens;
+            this.csrfToken = newTokens.csrf_token;
+            this.sessionId = newTokens.session_id;
+
+            // Re-extract CSRF/SID from the page using the new cookies
+            await this.refreshAuthTokens();
+
+            // Retry once
+            return this.executeOnce(rpcId, params, sourcePath, timeout);
+          } catch (refreshError) {
+            console.error("❌ Background refresh failed:", (refreshError as Error).message);
+            throw e; // Propagate original AuthenticationError
+          }
         }
         throw e;
       }
@@ -301,6 +314,11 @@ export class NotebookLMClient {
   }
 
   private parseNotebook(data: unknown): Notebook {
+    if (!Array.isArray(data)) {
+      throw new Error(
+        "Invalid notebook data received from Google. This usually happens if the notebook ID is incorrect, it was deleted, or you don't have permission to access it.",
+      );
+    }
     const d = data as any[];
     const sources: SourceSummary[] = [];
     if (Array.isArray(d[1])) {
@@ -626,6 +644,24 @@ export class NotebookLMClient {
 
       const text = await response.text();
       const parsed = this.parseResponse(text);
+
+      // Check for auth error in the response stream
+      for (const chunk of parsed) {
+        if (Array.isArray(chunk)) {
+          for (const item of chunk) {
+            if (Array.isArray(item) && item[0] === "wrb.fr" && Array.isArray(item[5]) && item[5].includes(16)) {
+              console.log("⚠️ Authentication expired during query. Attempting background refresh...");
+              const newTokens = await refreshCookiesHeadless();
+              this.tokens = newTokens;
+              this.csrfToken = newTokens.csrf_token;
+              this.sessionId = newTokens.session_id;
+              await this.refreshAuthTokens();
+              // Retry once
+              return this.query(notebookId, queryText, sourceIds, conversationId);
+            }
+          }
+        }
+      }
 
       // Find the longest Type 1 answer chunk
       let bestAnswer = "";
