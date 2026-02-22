@@ -98,36 +98,51 @@ export async function launchChrome(headless: boolean) {
   return chromeProcess;
 }
 
-export async function runBrowserAuthFlow(): Promise<AuthTokens> {
-  console.log("🚀 Launching Chrome for Smart Authentication...");
-  console.log("   (A dedicated profile will be used at ~/.notebooklm-mcp/chrome-profile)");
-  
-  await launchChrome(false);
+async function extractCookiesViaCDP(timeoutMs: number, showProgress: boolean): Promise<AuthTokens> {
+  const wsUrl = await getDebuggerUrl(CDP_PORT);
+  const ws = new WebSocket(wsUrl);
 
-  try {
-    const wsUrl = await getDebuggerUrl(CDP_PORT);
-    const ws = new WebSocket(wsUrl);
+  return new Promise((resolve, reject) => {
+    let messageId = 0;
+    let timer: NodeJS.Timeout;
+    let globalTimeout: NodeJS.Timeout;
 
-    return new Promise((resolve, reject) => {
-      let messageId = 0;
-      const send = (method: string, params: any = {}) => {
+    const cleanup = () => {
+      clearInterval(timer);
+      clearTimeout(globalTimeout);
+      ws.close();
+    };
+
+    const send = (method: string, params: any = {}) => {
+      if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ id: ++messageId, method, params }));
-      };
+      }
+    };
 
-      ws.on("open", () => {
-        send("Network.enable");
-        // Poll every 2 seconds
-        const timer = setInterval(() => {
-          send("Network.getCookies", { urls: [BASE_URL, "https://google.com"] });
-        }, 2000);
+    globalTimeout = setTimeout(() => {
+      cleanup();
+      reject(new Error(`Authentication timed out after ${timeoutMs / 1000}s.`));
+    }, timeoutMs);
 
-        ws.on("close", () => {
-          clearInterval(timer);
-          reject(new Error("Browser connection closed before authentication was complete."));
-        });
-      });
+    ws.on("open", () => {
+      send("Network.enable");
+      timer = setInterval(() => {
+        send("Network.getCookies", { urls: [BASE_URL, "https://google.com"] });
+      }, 2000);
+    });
 
-      ws.on("message", (data) => {
+    ws.on("close", () => {
+      cleanup();
+      reject(new Error("Browser connection closed before authentication was complete."));
+    });
+
+    ws.on("error", (err) => {
+      cleanup();
+      reject(err);
+    });
+
+    ws.on("message", (data) => {
+      try {
         const response = JSON.parse(data.toString());
         if (response.result && response.result.cookies) {
           const cookies: Record<string, string> = {};
@@ -143,20 +158,49 @@ export async function runBrowserAuthFlow(): Promise<AuthTokens> {
               extracted_at: Date.now() / 1000,
             };
             saveTokens(tokens);
-            console.log("\n✅ Smart Authentication successful!");
-            console.log("   Cookies extracted automatically.");
-            ws.close();
+            cleanup();
             resolve(tokens);
-          } else {
-            process.stdout.write("."); // Progress indicator
+          } else if (showProgress) {
+            process.stdout.write(".");
           }
         }
-      });
-
-      console.log("\nWaiting for you to log in to NotebookLM...");
-      console.log("If you are already logged in, extraction will happen automatically.");
-      console.log("If not, please complete the login process in the browser window.\n");
+      } catch (e) {
+        // ignore parse errors
+      }
     });
+  });
+}
+
+export async function refreshCookiesHeadless(): Promise<AuthTokens> {
+  console.log("🔄 Attempting background session refresh...");
+  const chromeProcess = await launchChrome(true);
+  
+  try {
+    const tokens = await extractCookiesViaCDP(15000, false);
+    console.log("✅ Background refresh successful.");
+    return tokens;
+  } catch (error) {
+    throw error;
+  } finally {
+    // Kill the headless process when done
+    chromeProcess.kill();
+  }
+}
+
+export async function runBrowserAuthFlow(): Promise<AuthTokens> {
+  console.log("🚀 Launching Chrome for Smart Authentication...");
+  console.log("   (A dedicated profile will be used at ~/.notebooklm-mcp/chrome-profile)");
+  
+  await launchChrome(false);
+
+  try {
+    console.log("\nWaiting for you to log in to NotebookLM...");
+    console.log("If you are already logged in, extraction will happen automatically.");
+    console.log("If not, please complete the login process in the browser window.\n");
+
+    const tokens = await extractCookiesViaCDP(120000, true);
+    console.log("\n✅ Smart Authentication successful!");
+    return tokens;
   } catch (error) {
     if (error instanceof Error) {
       throw new Error(`Smart Auth failed: ${error.message}\nTry manual auth instead.`);
