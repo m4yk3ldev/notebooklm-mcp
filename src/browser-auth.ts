@@ -72,7 +72,7 @@ async function getDebuggerUrl(port: number): Promise<string> {
   throw new Error("Could not connect to Chrome remote debugging port.");
 }
 
-export async function runBrowserAuthFlow(): Promise<AuthTokens> {
+export async function launchChrome(headless: boolean) {
   const chromePath = findChrome();
   if (!chromePath) {
     throw new Error("Could not find Google Chrome or Chromium. Please use manual auth.");
@@ -81,18 +81,28 @@ export async function runBrowserAuthFlow(): Promise<AuthTokens> {
   const userDataDir = join(homedir(), ".notebooklm-mcp", "chrome-profile");
   mkdirSync(userDataDir, { recursive: true });
 
-  console.log("🚀 Launching Chrome for Smart Authentication...");
-  console.log("   (A dedicated profile will be used at ~/.notebooklm-mcp/chrome-profile)");
-  
-  const chromeProcess = spawn(chromePath, [
+  const args = [
     `--remote-debugging-port=${CDP_PORT}`,
     `--user-data-dir=${userDataDir}`,
     "--no-first-run",
     "--no-default-browser-check",
     BASE_URL,
-  ], { detached: true, stdio: "ignore" });
+  ];
 
+  if (headless) {
+    args.push("--headless=new");
+  }
+
+  const chromeProcess = spawn(chromePath, args, { detached: true, stdio: "ignore" });
   chromeProcess.unref();
+  return chromeProcess;
+}
+
+export async function runBrowserAuthFlow(): Promise<AuthTokens> {
+  console.log("🚀 Launching Chrome for Smart Authentication...");
+  console.log("   (A dedicated profile will be used at ~/.notebooklm-mcp/chrome-profile)");
+  
+  await launchChrome(false);
 
   try {
     const wsUrl = await getDebuggerUrl(CDP_PORT);
