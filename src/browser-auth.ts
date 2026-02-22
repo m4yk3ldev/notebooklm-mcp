@@ -191,7 +191,7 @@ export async function runBrowserAuthFlow(): Promise<AuthTokens> {
   console.log("🚀 Launching Chrome for Smart Authentication...");
   console.log("   (A dedicated profile will be used at ~/.notebooklm-mcp/chrome-profile)");
   
-  await launchChrome(false);
+  const chromeProcess = await launchChrome(false);
 
   try {
     console.log("\nWaiting for you to log in to NotebookLM...");
@@ -206,5 +206,7 @@ export async function runBrowserAuthFlow(): Promise<AuthTokens> {
       throw new Error(`Smart Auth failed: ${error.message}\nTry manual auth instead.`);
     }
     throw error;
+  } finally {
+    chromeProcess.kill();
   }
 }
