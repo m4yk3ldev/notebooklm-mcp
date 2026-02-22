@@ -43,7 +43,7 @@ import {
   extractSessionIdFromPage,
   saveTokens,
 } from "./auth.js";
-import { refreshCookiesHeadless } from "./browser-auth.js";
+import { refreshCookiesHeadless, runBrowserAuthFlow } from "./browser-auth.js";
 
 export class AuthenticationError extends Error {
   constructor(message: string) {
@@ -218,7 +218,14 @@ export class NotebookLMClient {
         if (e instanceof AuthenticationError) {
           console.log("⚠️ Authentication expired. Attempting background refresh...");
           try {
-            const newTokens = await refreshCookiesHeadless();
+            let newTokens: AuthTokens;
+            try {
+              newTokens = await refreshCookiesHeadless();
+            } catch (refreshError) {
+              console.log("⚠️ Background refresh failed. Opening visible authentication window...");
+              newTokens = await runBrowserAuthFlow();
+            }
+
             this.tokens = newTokens;
             this.csrfToken = newTokens.csrf_token;
             this.sessionId = newTokens.session_id;
@@ -228,8 +235,8 @@ export class NotebookLMClient {
 
             // Retry once
             return this.executeOnce(rpcId, params, sourcePath, timeout);
-          } catch (refreshError) {
-            console.error("❌ Background refresh failed:", (refreshError as Error).message);
+          } catch (finalError) {
+            console.error("❌ Authentication failed:", (finalError as Error).message);
             throw e; // Propagate original AuthenticationError
           }
         }
@@ -651,7 +658,13 @@ export class NotebookLMClient {
           for (const item of chunk) {
             if (Array.isArray(item) && item[0] === "wrb.fr" && Array.isArray(item[5]) && item[5].includes(16)) {
               console.log("⚠️ Authentication expired during query. Attempting background refresh...");
-              const newTokens = await refreshCookiesHeadless();
+              let newTokens: AuthTokens;
+              try {
+                newTokens = await refreshCookiesHeadless();
+              } catch (refreshError) {
+                console.log("⚠️ Background refresh failed. Opening visible authentication window...");
+                newTokens = await runBrowserAuthFlow();
+              }
               this.tokens = newTokens;
               this.csrfToken = newTokens.csrf_token;
               this.sessionId = newTokens.session_id;
