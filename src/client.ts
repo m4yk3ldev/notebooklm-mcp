@@ -216,13 +216,13 @@ export class NotebookLMClient {
         return this.extractRpcResult(parsed, rpcId);
       } catch (e) {
         if (e instanceof AuthenticationError) {
-          console.log("⚠️ Authentication expired. Attempting background refresh...");
+          console.log("🔄 Session expired. Effortlessly restoring your connection in the background...");
           try {
             let newTokens: AuthTokens;
             try {
               newTokens = await refreshCookiesHeadless();
             } catch (refreshError) {
-              console.log("⚠️ Background refresh failed. Opening visible authentication window...");
+              console.log("⚠️ Automatic refresh encountered a hiccup. Launching a manual login window to get you back on track.");
               newTokens = await runBrowserAuthFlow();
             }
 
@@ -657,12 +657,12 @@ export class NotebookLMClient {
         if (Array.isArray(chunk)) {
           for (const item of chunk) {
             if (Array.isArray(item) && item[0] === "wrb.fr" && Array.isArray(item[5]) && item[5].includes(16)) {
-              console.log("⚠️ Authentication expired during query. Attempting background refresh...");
+              console.log("🔄 Session expired during query. Effortlessly restoring your connection in the background...");
               let newTokens: AuthTokens;
               try {
                 newTokens = await refreshCookiesHeadless();
               } catch (refreshError) {
-                console.log("⚠️ Background refresh failed. Opening visible authentication window...");
+                console.log("⚠️ Automatic refresh encountered a hiccup. Launching a manual login window to get you back on track.");
                 newTokens = await runBrowserAuthFlow();
               }
               this.tokens = newTokens;
