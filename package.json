@@ -1,6 +1,6 @@
 {
   "name": "@m4ykeldev/notebooklm-mcp",
-  "version": "0.1.22",
+  "version": "0.1.23",
   "description": "MCP server for Google NotebookLM — 32 tools for notebooks, sources, research, and studio content generation",
   "type": "module",
   "bin": {
@@ -12,7 +12,9 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "auth": "node dist/cli.js auth",
+    "serve": "node dist/cli.js serve"
   },
   "engines": {
     "node": ">=18"
