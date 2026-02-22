@@ -1,10 +1,28 @@
-# NotebookLM MCP Server
+# 🧠 NotebookLM MCP Server
 
-MCP server for [Google NotebookLM](https://notebooklm.google.com) — 32 tools for notebooks, sources, research, and studio content generation.
+### Unlock the Power of Google NotebookLM Directly in Your AI Workflow
 
-Built with the [Model Context Protocol](https://modelcontextprotocol.io) SDK for TypeScript.
+[![NPM Version](https://img.shields.io/npm/v/@m4ykeldev/notebooklm-mcp)](https://www.npmjs.com/package/@m4ykeldev/notebooklm-mcp)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## Quick Start
+Stop switching tabs. Stop manual copy-pasting. **NotebookLM MCP** brings the full potential of [Google NotebookLM](https://notebooklm.google.com) to your terminal, IDE, and AI assistants (Claude, Cursor, VS Code). 
+
+With **32+ specialized tools**, you can now automate notebook management, source ingestion, deep research, and studio-quality content generation—all without leaving your development environment.
+
+---
+
+## ✨ Features that Empower You
+
+- 🚀 **Smart Authentication**: Zero-friction login with automated cookie extraction.
+- 🔄 **Invisible Refresh**: Background session restoration keeps you connected without interruptions.
+- 📚 **Total Notebook Control**: Create, list, rename, and analyze notebooks programmatically.
+- 🌐 **Seamless Ingestion**: Add URLs, YouTube videos, Google Drive docs, or raw text as sources.
+- 🔬 **Automated Research**: Trigger Deep Research tasks and import discovered insights instantly.
+- 🎨 **Studio Content**: Generate Audio Overviews, infographics, slide decks, and briefing docs on the fly.
+
+---
+
+## ⚡ Quick Start
 
 ### 1. Install & Run
 
@@ -19,39 +37,27 @@ npm install -g @m4ykeldev/notebooklm-mcp
 notebooklm-mcp serve
 ```
 
-### 2. Authenticate
+### 2. Smart Authentication (Zero Friction)
+
+Authenticating is now a "magical" experience. No more manual cookie hunting.
 
 ```bash
-npx @m4ykeldev/notebooklm-mcp auth
+notebooklm-mcp auth
 ```
 
-This opens a dedicated Google Chrome instance (managed by the MCP server). If you're already logged in there, the server will **automatically** grab your session cookies. If not, simply log in once and it will handle the rest.
+- **How it works**: A dedicated, secure Chrome profile opens.
+- **Persistence**: Log in once, and the session is saved.
+- **Automation**: The server automatically detects your session and synchronizes cookies.
+- **Reliability**: If your session expires, the server **effortlessly restores it** in the background.
 
-Tokens are cached at `~/.notebooklm-mcp/auth.json`.
+*Prefer the old way? Use `notebooklm-mcp auth --manual` for traditional copy-paste extraction.*
 
-**Manual Authentication**
+---
 
-If you don't use Chrome or the automated flow fails:
-```bash
-npx @m4ykeldev/notebooklm-mcp auth --manual
-```
-This flow guides you through copying cookies from your own browser's DevTools.
+## 🤖 Integrate with Your Favorite Tools
 
-**Alternative: environment variables**
-
-```bash
-export NOTEBOOKLM_COOKIES="SID=xxx; HSID=xxx; SSID=xxx; APISID=xxx; SAPISID=xxx"
-```
-
-## Usage Examples
-
-Integrate NotebookLM directly into your AI development workflow.
-
-### 🤖 AI Editors & IDEs
-
-#### **Claude Desktop / Claude Code**
-
-Add this to your `claude_desktop_config.json` or MCP configuration:
+### Claude Desktop / Claude Code
+Add this to your `mcpServers` configuration:
 
 ```json
 {
@@ -64,147 +70,68 @@ Add this to your `claude_desktop_config.json` or MCP configuration:
 }
 ```
 
-#### **Cursor**
+### Cursor / VS Code
+1. Open **MCP Settings**.
+2. Add a new server named `NotebookLM`.
+3. Set type to `command` and use: `npx -y @m4ykeldev/notebooklm-mcp serve`.
 
-1. Go to **Settings** > **Features** > **MCP**.
-2. Click **+ Add New MCP Server**.
-3. **Name**: `NotebookLM`
-4. **Type**: `command`
-5. **Command**: `npx -y @m4ykeldev/notebooklm-mcp serve`
+---
 
-#### **VS Code (MCP Client)**
+## 🛠 Available Tools (32)
 
-If you use the [MCP Client](https://marketplace.visualstudio.com/items?itemName=mcp-client.mcp-client) extension:
+### 📔 Notebooks
+| Tool | Description |
+| :--- | :--- |
+| `notebook_list` | Overview of all your notebooks. |
+| `notebook_create` | Start a new project instantly. |
+| `notebook_get` | Dive deep into a specific notebook's metadata. |
+| `notebook_describe` | Get an AI-generated summary of your entire notebook. |
 
-1. Open your `settings.json`.
-2. Add the server configuration:
+### 📄 Sources
+| Tool | Description |
+| :--- | :--- |
+| `notebook_add_url` | Ingest web pages or YouTube transcripts. |
+| `notebook_add_drive` | Connect your Google Drive documents. |
+| `source_describe` | Instant AI analysis and keywords for any source. |
+| `source_get_content` | Extract raw text for downstream processing. |
 
-```json
-"mcp.servers": {
-  "notebooklm": {
-    "command": "npx",
-    "args": ["-y", "@m4ykeldev/notebooklm-mcp", "serve"]
-  }
-}
-```
+### 🧪 Research & Query
+| Tool | Description |
+| :--- | :--- |
+| `research_start` | Launch Web or Drive research tasks (Fast or Deep). |
+| `notebook_query` | Ask complex questions grounded in your sources. |
+| `research_import` | Bring research findings directly into your notebook. |
 
-### 💻 Command Line Interface
+### 🎬 Studio (Content Generation)
+| Tool | Description |
+| :--- | :--- |
+| `audio_overview_create` | Turn sources into a professional podcast. |
+| `report_create` | Generate Briefing Docs, Study Guides, or Blog Posts. |
+| `slide_deck_create` | Create presenter-ready slides from your data. |
+| `infographic_create` | Visualize information automatically. |
 
-Once authenticated, you can use the CLI for quick operations:
+---
 
-```bash
-# Start the server with a custom timeout
-npx @m4ykeldev/notebooklm-mcp serve --query-timeout 60000
-
-# Manage authentication
-npx @m4ykeldev/notebooklm-mcp auth --show-tokens
-```
-
-## Tools (32)
-
-### Notebooks
-
-| Tool                | Description                               |
-| ------------------- | ----------------------------------------- |
-| `notebook_list`     | List all notebooks with metadata          |
-| `notebook_create`   | Create a new notebook                     |
-| `notebook_get`      | Get details of a specific notebook        |
-| `notebook_describe` | AI-generated summary of notebook contents |
-| `notebook_rename`   | Rename a notebook                         |
-| `notebook_delete`   | Delete a notebook (requires confirmation) |
-
-### Sources
-
-| Tool                 | Description                                      |
-| -------------------- | ------------------------------------------------ |
-| `notebook_add_url`   | Add a URL or YouTube video as a source           |
-| `notebook_add_text`  | Add pasted text as a source                      |
-| `notebook_add_drive` | Add a Google Drive document as a source          |
-| `source_describe`    | AI summary and keywords for a source             |
-| `source_get_content` | Raw text content of a source                     |
-| `source_list_drive`  | List sources with Drive freshness status         |
-| `source_sync_drive`  | Sync stale Drive sources (requires confirmation) |
-| `source_delete`      | Delete a source (requires confirmation)          |
-
-### Query & Chat
-
-| Tool             | Description                          |
-| ---------------- | ------------------------------------ |
-| `notebook_query` | Ask questions about notebook sources |
-| `chat_configure` | Set chat goal and response length    |
-
-### Research
-
-| Tool              | Description                             |
-| ----------------- | --------------------------------------- |
-| `research_start`  | Start a web or Drive research task      |
-| `research_status` | Check research task progress            |
-| `research_import` | Import discovered sources from research |
-
-### Studio — Content Generation
-
-| Tool                    | Description                                          |
-| ----------------------- | ---------------------------------------------------- |
-| `audio_overview_create` | Generate an audio podcast                            |
-| `video_overview_create` | Generate a video summary                             |
-| `infographic_create`    | Generate an infographic                              |
-| `slide_deck_create`     | Generate a slide presentation                        |
-| `report_create`         | Generate a report (briefing, study guide, blog post) |
-| `flashcards_create`     | Generate study flashcards                            |
-| `quiz_create`           | Generate a quiz                                      |
-| `data_table_create`     | Generate a data table                                |
-| `mind_map_create`       | Generate and save a mind map                         |
-| `studio_status`         | Check generation status and download URLs            |
-| `studio_delete`         | Delete a studio artifact (requires confirmation)     |
-
-### Authentication
-
-| Tool           | Description                                        |
-| -------------- | -------------------------------------------------- |
-| `refresh_auth` | Reload authentication tokens equires confirmation) |
-
-### Authentication
-
-| Tool               | Description                          |
-| ------------------ | ------------------------------------ |
-| `refresh_auth`     | Reload authentication tokens         |
-| `save_auth_tokens` | Manually save authentication cookies |
-
-## CLI Reference
+## ⚙️ Advanced Usage
 
 ```bash
-# Start the MCP server (default command)
-notebooklm-mcp serve
+# Set a custom query timeout
 notebooklm-mcp serve --query-timeout 60000
 
-# Authenticate interactively (automated Chrome integration)
-notebooklm-mcp auth
-
-# Authenticate manually (copy-paste cookies)
-notebooklm-mcp auth --manual
-
-# Import cookies from a file
-notebooklm-mcp auth --file cookies.txt
-
-# Show cached token info
+# Manage authentication tokens
 notebooklm-mcp auth --show-tokens
 ```
 
-## How It Works
+---
 
-This server communicates with NotebookLM through Google's internal `batchexecute` RPC endpoint. It uses the same API that the NotebookLM web app uses in your browser.
+## 🛡 Disclaimer & Security
 
-Authentication is cookie-based — the server needs your Google session cookies to make requests on your behalf. Cookies are extracted once and cached locally. CSRF tokens are auto-refreshed when they expire.
+- **Security First**: Your cookies are stored locally at `~/.notebooklm-mcp/auth.json` and never shared.
+- **Unofficial**: This project is not affiliated with Google. It utilizes internal RPC endpoints (`batchexecute`) and is subject to changes in NotebookLM's web API.
 
-## Requirements
+## 📄 License
 
-- Node.js >= 18
-- A Google account with access to [NotebookLM](https://notebooklm.google.com)
+Distributed under the [MIT License](LICENSE). 
 
-## Disclaimer
-
-This project is not affiliated with, endorsed by, or sponsored by Google. It uses NotebookLM's internal web API, which is undocumented and may change without notice. Use at your own risk.
-
-## License
-
-[MIT](LICENSE)
+---
+Built with ❤️ for the AI developer community using the [Model Context Protocol](https://modelcontextprotocol.io).
