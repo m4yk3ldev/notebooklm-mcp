@@ -56,10 +56,26 @@ async function getDebuggerUrl(port: number): Promise<string> {
   const maxRetries = 20;
   for (let i = 0; i < maxRetries; i++) {
     try {
-      const response = await fetch(`http://localhost:${port}/json/version`);
+      const response = await fetch(`http://localhost:${port}/json/list`);
       if (response.ok) {
-        const data = (await response.json()) as any;
-        return data.webSocketDebuggerUrl;
+        const data = (await response.json()) as any[];
+        if (Array.isArray(data)) {
+          const notebookTab = data.find(
+            (target) =>
+              target?.type === "page" &&
+              typeof target?.url === "string" &&
+              target.url.startsWith(BASE_URL) &&
+              typeof target?.webSocketDebuggerUrl === "string",
+          );
+          if (notebookTab) return notebookTab.webSocketDebuggerUrl;
+
+          const firstPage = data.find(
+            (target) =>
+              target?.type === "page" &&
+              typeof target?.webSocketDebuggerUrl === "string",
+          );
+          if (firstPage) return firstPage.webSocketDebuggerUrl;
+        }
       }
     } catch {
       // wait and retry
@@ -81,7 +97,6 @@ export async function launchChrome(headless: boolean) {
   mkdirSync(userDataDir, { recursive: true });
 
   const args = [
-    "%U",
     `--remote-debugging-port=${CDP_PORT}`,
     `--user-data-dir=${userDataDir}`,
     "--no-first-run",
@@ -112,6 +127,7 @@ async function extractCookiesViaCDP(
     let messageId = 0;
     let timer: NodeJS.Timeout;
     let globalTimeout: NodeJS.Timeout;
+    let lastCdpError: string | null = null;
 
     const cleanup = () => {
       clearInterval(timer);
@@ -127,7 +143,13 @@ async function extractCookiesViaCDP(
 
     globalTimeout = setTimeout(() => {
       cleanup();
-      reject(new Error(`Authentication timed out after ${timeoutMs / 1000}s.`));
+      reject(
+        new Error(
+          lastCdpError
+            ? `Authentication timed out after ${timeoutMs / 1000}s (CDP error: ${lastCdpError}).`
+            : `Authentication timed out after ${timeoutMs / 1000}s.`,
+        ),
+      );
     }, timeoutMs);
 
     ws.on("open", () => {
@@ -154,6 +176,10 @@ async function extractCookiesViaCDP(
     ws.on("message", (data) => {
       try {
         const response = JSON.parse(data.toString());
+        if (response.error) {
+          lastCdpError = response.error.message || JSON.stringify(response.error);
+          return;
+        }
         if (response.result && response.result.cookies) {
           const cookies: Record<string, string> = {};
           for (const c of response.result.cookies) {
