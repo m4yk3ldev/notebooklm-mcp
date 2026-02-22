@@ -87,6 +87,7 @@ export async function launchChrome(headless: boolean) {
     "--no-first-run",
     "--no-default-browser-check",
     BASE_URL,
+    "%U",
   ];
 
   if (headless) {
