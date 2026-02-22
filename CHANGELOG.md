@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.22] - 2026-02-21
+
+### Changed
+- Improved Chrome launcher compatibility by adding `%U` argument for some Linux environments.
+- Polished all CLI messages and error handling with professional, benefits-oriented copywriting.
+- Rewrote `README.md` for clarity, impact, and to better showcase the "Smart Authentication" feature.
+
 ## [0.1.21] - 2026-02-21
 
 ### Added
