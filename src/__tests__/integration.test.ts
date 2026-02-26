@@ -51,7 +51,7 @@ describe("NotebookLMClient Integration", () => {
     // pollStudio expects results in the first item of the array
     const studioData = [
       [
-        ["art-789", null, 1, 3, "https://download.url"]
+        ["art-789", "Test Title", 1, [], 3, "https://download.url"]
       ]
     ];
     
