@@ -128,6 +128,7 @@ async function extractCookiesViaCDP(
     let timer: NodeJS.Timeout;
     let globalTimeout: NodeJS.Timeout;
     let lastCdpError: string | null = null;
+    let lastExtractedTokens: AuthTokens | null = null;
 
     const cleanup = () => {
       clearInterval(timer);
@@ -153,9 +154,15 @@ async function extractCookiesViaCDP(
     }, timeoutMs);
 
     ws.on("open", () => {
-      timer = setInterval(() => {
-        send("Storage.getCookies", {});
-      }, 2000);
+      // Enable runtime to allow JS evaluation
+      send("Runtime.enable", {});
+      
+      // Wait a bit for initial page load
+      setTimeout(() => {
+        timer = setInterval(() => {
+          send("Storage.getCookies", {});
+        }, 2000);
+      }, 5000);
     });
 
     ws.on("close", () => {
@@ -186,17 +193,37 @@ async function extractCookiesViaCDP(
           }
 
           if (validateCookies(cookies)) {
+            // Success! Now let's try to get CSRF/SID and BL directly from the page context
+            send("Runtime.evaluate", {
+              expression: "JSON.stringify({csrf: (window.WIZ_global_data && window.WIZ_global_data.SNlM0e) || null, sid: (window.WIZ_global_data && window.WIZ_global_data.FdrFJe) || null, bl: (window.WIZ_global_data && window.WIZ_global_data.cfb2h) || null})"
+            });
+            
             const tokens: AuthTokens = {
               cookies,
               csrf_token: "",
               session_id: "",
               extracted_at: Date.now() / 1000,
             };
-            saveTokens(tokens);
-            cleanup();
-            resolve(tokens);
+            
+            lastExtractedTokens = tokens;
           } else if (showProgress) {
             process.stderr.write(".");
+          }
+        }
+
+        if (response.result && response.result.result && response.result.result.value) {
+          try {
+            const data = JSON.parse(response.result.result.value);
+            if (lastExtractedTokens) {
+              lastExtractedTokens.csrf_token = data.csrf || "";
+              lastExtractedTokens.session_id = data.sid || "";
+              lastExtractedTokens.bl = data.bl || "";
+              saveTokens(lastExtractedTokens);
+              cleanup();
+              resolve(lastExtractedTokens);
+            }
+          } catch (e) {
+            // ignore
           }
         }
       } catch (e) {
@@ -208,10 +235,11 @@ async function extractCookiesViaCDP(
 
 export async function refreshCookiesHeadless(): Promise<AuthTokens> {
   console.error("🔄 Attempting background session refresh...");
-  const chromeProcess = await launchChrome(true);
+  // Use non-headless to avoid Google's detection of automated environments
+  const chromeProcess = await launchChrome(false);
 
   try {
-    const tokens = await extractCookiesViaCDP(30000, false);
+    const tokens = await extractCookiesViaCDP(30000, true);
     console.error("✅ Background refresh successful.");
     return tokens;
   } catch (error) {
