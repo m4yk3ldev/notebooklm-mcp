@@ -66,22 +66,35 @@ describe("NotebookLMClient", () => {
     let callCount = 0;
 
     server.use(
-      http.post(`${BASE_URL}${BATCHEXECUTE_PATH}`, () => {
-        callCount++;
-        if (callCount <= 2) {
-          const authErrorBundle = ["wrb.fr", RPC_IDS.LIST_NOTEBOOKS, null, null, null, [16], "generic"];
-          const json = JSON.stringify([authErrorBundle]);
+      http.post(`${BASE_URL}${BATCHEXECUTE_PATH}`, ({ request }) => {
+        const url = new URL(request.url);
+        const rpcId = url.searchParams.get("rpcids");
+
+        if (rpcId === RPC_IDS.LIST_NOTEBOOKS) {
+          callCount++;
+          if (callCount <= 2) {
+            const authErrorBundle = ["wrb.fr", RPC_IDS.LIST_NOTEBOOKS, null, null, null, [16], "generic"];
+            const json = JSON.stringify([authErrorBundle]);
+            return HttpResponse.text(`)]}'\n\n${json.length}\n${json}`);
+          }
+
+          const successBundle = [
+            "wrb.fr",
+            RPC_IDS.LIST_NOTEBOOKS,
+            JSON.stringify([[["Notebook 1", [], "nb-id-1", null, null, [1, false, 8, null, null, null, null, null, [1740520000], null, null, [1740520000]]]]]),
+            null, null, null, "generic"
+          ];
+          const json = JSON.stringify([successBundle]);
           return HttpResponse.text(`)]}'\n\n${json.length}\n${json}`);
         }
 
-        const successBundle = [
-          "wrb.fr",
-          RPC_IDS.LIST_NOTEBOOKS,
-          JSON.stringify([[["Notebook 1", [], "nb-id-1", null, null, [1, false, 8, null, null, null, null, null, [1740520000], null, null, [1740520000]]]]]),
-          null, null, null, "generic"
-        ];
-        const json = JSON.stringify([successBundle]);
-        return HttpResponse.text(`)]}'\n\n${json.length}\n${json}`);
+        if (rpcId === RPC_IDS.SETTINGS) {
+          const successBundle = ["wrb.fr", RPC_IDS.SETTINGS, JSON.stringify([null, 1]), null, null, null, "generic"];
+          const json = JSON.stringify([successBundle]);
+          return HttpResponse.text(`)]}'\n\n${json.length}\n${json}`);
+        }
+
+        return HttpResponse.text("<html>CSRF</html>");
       }),
       http.get(`${BASE_URL}`, () => {
         return HttpResponse.text(`<html>CSRF</html>`);
@@ -117,7 +130,7 @@ describe("NotebookLMClient", () => {
         const successBundle = [
           "wrb.fr",
           "rpc-query",
-          JSON.stringify(["This is the answer", null, 1, null, "conv-123"]),
+          JSON.stringify([["This is the answer", null, 1, null, null, null, null, null, null, null, "conv-123"]]),
           null, null, null, "generic"
         ];
         const json = JSON.stringify([successBundle]);
@@ -125,6 +138,15 @@ describe("NotebookLMClient", () => {
       }),
       http.get(`${BASE_URL}`, () => {
         return HttpResponse.text(`<html>CSRF</html>`);
+      }),
+      http.post(`${BASE_URL}${BATCHEXECUTE_PATH}`, ({ request }) => {
+        const url = new URL(request.url);
+        if (url.searchParams.get("rpcids") === RPC_IDS.SETTINGS) {
+          const successBundle = ["wrb.fr", RPC_IDS.SETTINGS, JSON.stringify([null, 1]), null, null, null, "generic"];
+          const json = JSON.stringify([successBundle]);
+          return HttpResponse.text(`)]}'\n\n${json.length}\n${json}`);
+        }
+        return new HttpResponse(null, { status: 404 });
       })
     );
 

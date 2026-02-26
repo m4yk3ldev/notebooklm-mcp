@@ -74,7 +74,9 @@ describe("NotebookLMClient Integration", () => {
     server.use(
       http.post(`${BASE_URL}${BATCHEXECUTE_PATH}`, ({ request }) => {
         const url = new URL(request.url);
-        if (url.searchParams.get("rpcids") === RPC_IDS.START_DEEP_RESEARCH) {
+        const rpcId = url.searchParams.get("rpcids");
+        
+        if (rpcId === RPC_IDS.START_DEEP_RESEARCH) {
           callCount++;
           // Double count in test environment
           if (callCount <= 2) {
@@ -84,6 +86,11 @@ describe("NotebookLMClient Integration", () => {
           }
           return createMockResponse(RPC_IDS.START_DEEP_RESEARCH, ["task-deep-789"]);
         }
+        
+        if (rpcId === RPC_IDS.SETTINGS) {
+          return createMockResponse(RPC_IDS.SETTINGS, [null, 1]);
+        }
+        
         return HttpResponse.text("<html>CSRF</html>");
       }),
       http.get(`${BASE_URL}`, () => HttpResponse.text("<html>CSRF</html>"))

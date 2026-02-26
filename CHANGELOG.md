@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.30] - 2026-02-26
+
+### Fixed
+- **Query Tool Reliability**: Implemented session expiration detection and automatic background retry for the `query` tool, matching the robustness of other RPC tools.
+- **Test Suite Integrity**: Corrected parsing logic in unit tests to align with Google's nested response format.
+- **Cleaner Test Output**: Added mocks for background warm-up RPC calls (Settings) to eliminate noisy MSW warnings during test execution.
+
 ## [0.1.26] - 2026-02-26
 
 ### Added
