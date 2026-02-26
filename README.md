@@ -70,17 +70,61 @@ Add the following to your `mcpServers` configuration:
 
 ---
 
-## 🛠 32 Specialized Tools at Your Fingertips
+## 🛠 Complete Tool Reference (32)
 
-The server exposes 32 modular tools categorized for maximum efficiency:
+Every tool is designed to work seamlessly within your AI's context window.
 
-| Category | Key Tools |
+### 📔 Notebook Management
+| Tool | Description |
 | :--- | :--- |
-| **📔 Notebooks** | `list`, `create`, `get`, `describe`, `rename`, `delete` |
-| **📄 Sources** | `add_url`, `add_text`, `add_drive`, `describe_source`, `delete_source` |
-| **🔬 Research** | `research_start`, `research_status`, `research_import` |
-| **🎬 Studio** | `audio_overview`, `video_overview`, `infographic`, `slide_deck`, `report`, `quiz` |
-| **💬 Chat** | `notebook_query` (grounded chat), `chat_configure` |
+| `notebook_list` | Get an overview of all your notebooks, including titles, source counts, and ownership metadata. |
+| `notebook_create` | Create a new NotebookLM project instantly from your terminal or AI assistant. |
+| `notebook_get` | Retrieve deep metadata and a full list of sources for a specific notebook. |
+| `notebook_describe` | Get a high-level, AI-generated summary of everything inside a notebook. |
+| `notebook_rename` | Update the title of an existing notebook. |
+| `notebook_delete` | Permanently remove a notebook (requires explicit confirmation). |
+
+### 📄 Source Ingestion & Management
+| Tool | Description |
+| :--- | :--- |
+| `notebook_add_url` | Add any website or YouTube video as a source. Transcripts are automatically handled. |
+| `notebook_add_text` | Ingest raw text snippets or local file contents directly into your project. |
+| `notebook_add_drive` | Connect and import documents, sheets, or slides from your Google Drive. |
+| `source_describe` | Get detailed AI analysis, summaries, and key topics for any individual source. |
+| `source_get_content` | Extract the full underlying text of a source for processing by other AI tools. |
+| `source_list_drive` | List all Drive-based sources and check if they are up-to-date with the original files. |
+| `source_sync_drive` | Sync selected Google Drive sources to pull the latest changes into NotebookLM. |
+| `source_delete` | Remove a specific source from your notebook. |
+
+### 🔬 Research & Deep Analysis
+| Tool | Description |
+| :--- | :--- |
+| `research_start` | Launch an autonomous research task using Google's engine (Web or Drive sources). |
+| `research_status` | Track the progress of active research tasks and view discovered insights. |
+| `research_import` | Instantly import the findings of a research task as new sources in your notebook. |
+| `notebook_query` | Ask complex, grounded questions. Answers are cited directly from your sources. |
+| `chat_configure` | Fine-tune your AI's behavior by setting specific goals or preferred response lengths. |
+
+### 🎬 Studio (AI Content Generation)
+| Tool | Description |
+| :--- | :--- |
+| `audio_overview_create` | Transform your notebook's sources into a professional, podcast-style audio discussion. |
+| `video_overview_create` | Generate a structured video explainer based on your project data. |
+| `report_create` | Create professional Briefing Docs, Study Guides, or Blog Posts tailored to your sources. |
+| `slide_deck_create` | Turn your research into a presenter-ready slide deck automatically. |
+| `infographic_create` | Visualize complex data and relationships with an AI-generated infographic. |
+| `flashcards_create` | Generate interactive study flashcards to master your notebook's content. |
+| `quiz_create` | Create a comprehensive quiz to test knowledge grounded in your provided sources. |
+| `data_table_create` | Extract and organize information into a structured, downloadable data table. |
+| `mind_map_create` | Build a visual mind map connecting the core concepts of your notebook. |
+| `studio_status` | Check the generation status of your Studio artifacts and get download links. |
+| `studio_delete` | Clean up your workspace by deleting old Studio artifacts. |
+
+### 🔑 Authentication Helpers
+| Tool | Description |
+| :--- | :--- |
+| `refresh_auth` | Manually trigger a session refresh if you encounter connection issues. |
+| `save_auth_tokens` | Manually save cookie data (legacy fallback method). |
 
 ---
 
@@ -88,8 +132,7 @@ The server exposes 32 modular tools categorized for maximum efficiency:
 
 - **Custom Timeouts**: Working with massive sources? Increase the timeout:
   `notebooklm-mcp serve --query-timeout 120000`
-- **Verify Sessions**: Check your current auth status:
-  `notebooklm-mcp auth --show-tokens`
+- **Check Connections**: Use `auth --show-tokens` to verify your session validity.
 
 ---
 
