@@ -193,37 +193,48 @@ async function extractCookiesViaCDP(
           }
 
           if (validateCookies(cookies)) {
-            // Success! Now let's try to get CSRF/SID and BL directly from the page context
+            // Cookies look complete — but verify we're actually ON NotebookLM
+            // (not on accounts.google.com login/chooser page)
             send("Runtime.evaluate", {
-              expression: "JSON.stringify({csrf: (window.WIZ_global_data && window.WIZ_global_data.SNlM0e) || null, sid: (window.WIZ_global_data && window.WIZ_global_data.FdrFJe) || null, bl: (window.WIZ_global_data && window.WIZ_global_data.cfb2h) || null})"
+              expression: `JSON.stringify({
+                href: window.location.href,
+                csrf: (window.WIZ_global_data && window.WIZ_global_data.SNlM0e) || null,
+                sid: (window.WIZ_global_data && window.WIZ_global_data.FdrFJe) || null,
+                bl: (window.WIZ_global_data && window.WIZ_global_data.cfb2h) || null
+              })`
             });
-            
+
             const tokens: AuthTokens = {
               cookies,
               csrf_token: "",
               session_id: "",
               extracted_at: Date.now() / 1000,
             };
-            
+
             lastExtractedTokens = tokens;
           } else if (showProgress) {
             process.stderr.write(".");
           }
         }
 
-        if (response.result && response.result.result && response.result.result.value) {
+        if (response.result?.result?.value && lastExtractedTokens) {
           try {
             const data = JSON.parse(response.result.result.value);
-            if (lastExtractedTokens) {
-              lastExtractedTokens.csrf_token = data.csrf || "";
-              lastExtractedTokens.session_id = data.sid || "";
-              lastExtractedTokens.bl = data.bl || "";
-              saveTokens(lastExtractedTokens);
-              cleanup();
-              resolve(lastExtractedTokens);
+            // Only resolve if we're actually on NotebookLM — not the login page
+            if (!data.href || !data.href.startsWith("https://notebooklm.google.com")) {
+              // Still on Google login/chooser — reset and keep polling
+              lastExtractedTokens = null;
+              if (showProgress) process.stderr.write("🔑");
+              return;
             }
+            lastExtractedTokens.csrf_token = data.csrf || "";
+            lastExtractedTokens.session_id = data.sid || "";
+            lastExtractedTokens.bl = data.bl || "";
+            saveTokens(lastExtractedTokens);
+            cleanup();
+            resolve(lastExtractedTokens);
           } catch (e) {
-            // ignore
+            // ignore parse errors
           }
         }
       } catch (e) {
