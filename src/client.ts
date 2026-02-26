@@ -72,19 +72,24 @@ export class NotebookLMClient {
   private buildRequestBody(rpcId: string, params: unknown): string {
     const paramsJson = JSON.stringify(params);
     const fReq = JSON.stringify([[[rpcId, paramsJson, null, "generic"]]]);
-    const parts = [`f.req=${encodeURIComponent(fReq)}`];
+    const parts = [];
     if (this.csrfToken) {
       parts.push(`at=${encodeURIComponent(this.csrfToken)}`);
     }
-    return parts.join("&") + "&";
+    if (this.sessionId) {
+      parts.push(`f.sid=${encodeURIComponent(this.sessionId)}`);
+    }
+    parts.push(`f.req=${encodeURIComponent(fReq)}`);
+    return parts.join("&");
   }
 
   private buildUrl(rpcId: string, sourcePath = "/"): string {
+    this.reqId++;
     const params: Record<string, string> = {
       rpcids: rpcId,
-      "source-path": sourcePath,
-      bl: process.env.NOTEBOOKLM_BL || DEFAULT_BL,
-      hl: "en",
+      bl: this.tokens.bl || process.env.NOTEBOOKLM_BL || DEFAULT_BL,
+      hl: "en-US",
+      _reqid: String(this.reqId),
       rt: "c",
     };
     if (this.sessionId) {
@@ -97,7 +102,7 @@ export class NotebookLMClient {
   private buildQueryUrl(sourcePath = "/"): string {
     this.reqId++;
     const params: Record<string, string> = {
-      bl: process.env.NOTEBOOKLM_BL || DEFAULT_BL,
+      bl: this.tokens.bl || process.env.NOTEBOOKLM_BL || DEFAULT_BL,
       hl: "en",
       _reqid: String(this.reqId),
       rt: "c",
@@ -150,11 +155,20 @@ export class NotebookLMClient {
     return results;
   }
 
-  private extractRpcResult(parsed: unknown[], rpcId: string): unknown {
+  private extractRpcResult(parsed: unknown[], rpcId: string, isRetry = false): unknown {
     for (const chunk of parsed) {
       if (!Array.isArray(chunk)) continue;
       for (const item of chunk) {
-        if (!Array.isArray(item) || item.length < 3) continue;
+        if (!Array.isArray(item)) continue;
+
+        // Extract Session ID if provided by Google
+        if (item[0] === "af.httprm" && item.length >= 3 && typeof item[2] === "string") {
+          this.sessionId = item[2];
+          this.tokens.session_id = this.sessionId;
+          saveTokens(this.tokens);
+        }
+
+        if (item.length < 3) continue;
         if (item[0] === "wrb.fr" && item[1] === rpcId) {
           // Check for auth error (code 16)
           if (
@@ -163,10 +177,14 @@ export class NotebookLMClient {
             Array.isArray(item[5]) &&
             item[5].includes(16)
           ) {
-            throw new AuthenticationError(
-              "Authentication expired. Run `npx @m4ykeldev/notebooklm-mcp auth` to re-authenticate.",
-            );
+            // If it's the first try, throw so we can refresh
+            if (!isRetry) {
+              throw new AuthenticationError(
+                "Authentication expired. Run `npx @m4ykeldev/notebooklm-mcp auth` to re-authenticate.",
+              );
+            }
           }
+
           const resultStr = item[2];
           if (typeof resultStr === "string") {
             try {
@@ -189,12 +207,18 @@ export class NotebookLMClient {
     timeout = DEFAULT_TIMEOUT,
     isRetry = false,
   ): Promise<unknown> {
+    // If CSRF or SID are missing, try to extract them first
+    if (!this.csrfToken || !this.sessionId) {
+      await this.refreshAuthTokens();
+    }
+
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
 
     try {
       const url = this.buildUrl(rpcId, sourcePath);
       const body = this.buildRequestBody(rpcId, params);
+
 
       const response = await fetch(url, {
         method: "POST",
@@ -205,19 +229,53 @@ export class NotebookLMClient {
           Cookie: buildCookieHeader(this.tokens.cookies),
           "X-Same-Domain": "1",
           "User-Agent": USER_AGENT,
+          "sec-ch-ua": '"Not(A:Brand";v="99", "Google Chrome";v="133", "Chromium";v="133"',
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": '"Linux"',
+          "X-Goog-Encode-Response-If-Executable": "base64",
+          "X-Google-SIDRT": "1",
         },
         body,
         signal: controller.signal,
       });
 
+      // Update cookies from Set-Cookie headers
+      const setCookies = (response.headers as any).getSetCookie?.() || [];
+      if (setCookies.length > 0) {
+        for (const cookieStr of setCookies) {
+          const parts = cookieStr.split(";")[0].split("=");
+          if (parts.length >= 2) {
+            this.tokens.cookies[parts[0].trim()] = parts[1].trim();
+          }
+        }
+        saveTokens(this.tokens);
+      }
+
       const text = await response.text();
       const parsed = this.parseResponse(text);
 
       try {
-        return this.extractRpcResult(parsed, rpcId);
+        return this.extractRpcResult(parsed, rpcId, isRetry);
       } catch (e) {
         if (e instanceof AuthenticationError && !isRetry) {
-          console.error("🔄 Session expired. Effortlessly restoring your connection in the background...");
+          console.error("🔄 Session expired. Checking for updated tokens on disk...");
+          
+          // Try to reload tokens from disk first
+          try {
+            const { loadTokensFromCache } = await import("./auth.js");
+            const freshTokens = loadTokensFromCache();
+            if (freshTokens && freshTokens.extracted_at > this.tokens.extracted_at) {
+              console.error("✅ Found fresher tokens on disk. Retrying with new tokens...");
+              this.tokens = freshTokens;
+              this.csrfToken = freshTokens.csrf_token;
+              this.sessionId = freshTokens.session_id;
+              return this.execute(rpcId, params, sourcePath, timeout, true);
+            }
+          } catch (reloadError) {
+            // ignore
+          }
+
+          console.error("🔄 Effortlessly restoring your connection in the background...");
           try {
             let newTokens: AuthTokens;
             try {
@@ -231,14 +289,20 @@ export class NotebookLMClient {
             this.csrfToken = newTokens.csrf_token;
             this.sessionId = newTokens.session_id;
 
-            // Re-extract CSRF/SID from the page using the new cookies
-            await this.refreshAuthTokens();
+            // Warm up session with a real RPC call (Settings)
+            try {
+              await this.execute(RPC_IDS.SETTINGS, [null, 1], "/", 5000, true);
+            } catch {
+              // ignore warmup error
+            }
+            
+            await new Promise(r => setTimeout(r, 1000));
 
-            // Retry once by calling itself with isRetry = true
+            // Retry original request
             return this.execute(rpcId, params, sourcePath, timeout, true);
           } catch (finalError) {
             console.error("❌ Authentication failed:", (finalError as Error).message);
-            throw e; // Propagate original AuthenticationError
+            throw e;
           }
         }
         throw e;
@@ -333,7 +397,7 @@ export class NotebookLMClient {
   async listNotebooks(maxResults = 100): Promise<Notebook[]> {
     const result = await this.execute(
       RPC_IDS.LIST_NOTEBOOKS,
-      [null, 1, null, [2]],
+      [null, maxResults, null, [1]],
     );
     if (!Array.isArray(result) || !Array.isArray(result[0])) return [];
 
@@ -589,6 +653,11 @@ export class NotebookLMClient {
     conversationId?: string,
     isRetry = false,
   ): Promise<QueryResponse> {
+    // If CSRF or SID are missing, try to extract them first
+    if (!this.csrfToken || !this.sessionId) {
+      await this.refreshAuthTokens();
+    }
+
     const sourcesNested = sourceIds
       ? sourceIds.map((sid) => [[sid]])
       : [];
@@ -610,7 +679,7 @@ export class NotebookLMClient {
 
     try {
       const fReq = JSON.stringify([null, JSON.stringify(params)]);
-      const body = `f.req=${encodeURIComponent(fReq)}&`;
+      const body = `f.req=${encodeURIComponent(fReq)}`;
       const url = this.buildQueryUrl(`/notebook/${notebookId}`);
 
       const response = await fetch(url, {
@@ -622,10 +691,27 @@ export class NotebookLMClient {
           Cookie: buildCookieHeader(this.tokens.cookies),
           "X-Same-Domain": "1",
           "User-Agent": USER_AGENT,
+          "sec-ch-ua": '"Not(A:Brand";v="99", "Google Chrome";v="133", "Chromium";v="133"',
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": '"Linux"',
+          "X-Goog-Encode-Response-If-Executable": "base64",
+          "X-Google-SIDRT": "1",
         },
         body,
         signal: controller.signal,
       });
+
+      // Update cookies from Set-Cookie headers
+      const setCookies = (response.headers as any).getSetCookie?.() || [];
+      if (setCookies.length > 0) {
+        for (const cookieStr of setCookies) {
+          const parts = cookieStr.split(";")[0].split("=");
+          if (parts.length >= 2) {
+            this.tokens.cookies[parts[0].trim()] = parts[1].trim();
+          }
+        }
+        saveTokens(this.tokens);
+      }
 
       const text = await response.text();
       const parsed = this.parseResponse(text);
@@ -634,12 +720,36 @@ export class NotebookLMClient {
       for (const chunk of parsed) {
         if (Array.isArray(chunk)) {
           for (const item of chunk) {
-            if (Array.isArray(item) && item[0] === "wrb.fr" && Array.isArray(item[5]) && item[5].includes(16)) {
+            if (!Array.isArray(item)) continue;
+
+            // Extract Session ID if provided by Google
+            if (item[0] === "af.httprm" && item.length >= 3 && typeof item[2] === "string") {
+              this.sessionId = item[2];
+              this.tokens.session_id = this.sessionId;
+              saveTokens(this.tokens);
+            }
+
+            if (item[0] === "wrb.fr" && Array.isArray(item[5]) && item[5].includes(16)) {
               if (isRetry) {
                 throw new AuthenticationError("Authentication failed during query retry.");
               }
 
-              console.error("🔄 Session expired during query. Effortlessly restoring your connection in the background...");
+              console.error("🔄 Session expired during query. Checking for updated tokens on disk...");
+              try {
+                const { loadTokensFromCache } = await import("./auth.js");
+                const freshTokens = loadTokensFromCache();
+                if (freshTokens && freshTokens.extracted_at > this.tokens.extracted_at) {
+                  console.error("✅ Found fresher tokens on disk. Retrying query with new tokens...");
+                  this.tokens = freshTokens;
+                  this.csrfToken = freshTokens.csrf_token;
+                  this.sessionId = freshTokens.session_id;
+                  return this.query(notebookId, queryText, sourceIds, conversationId, true);
+                }
+              } catch (reloadError) {
+                // ignore
+              }
+
+              console.error("🔄 Effortlessly restoring your connection in the background...");
               try {
                 let newTokens: AuthTokens;
                 try {
@@ -652,10 +762,15 @@ export class NotebookLMClient {
                 this.csrfToken = newTokens.csrf_token;
                 this.sessionId = newTokens.session_id;
                 
-                await this.refreshAuthTokens();
+                // Warm up session and allow propagation
+                await fetch(BASE_URL, {
+                  headers: {
+                    Cookie: buildCookieHeader(this.tokens.cookies),
+                    "User-Agent": USER_AGENT,
+                  }
+                });
                 
-                // Small delay to allow tokens to propagate
-                await new Promise(r => setTimeout(r, 500));
+                await new Promise(r => setTimeout(r, 2000));
 
                 // Retry once
                 return this.query(notebookId, queryText, sourceIds, conversationId, true);

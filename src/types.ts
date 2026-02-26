@@ -2,6 +2,7 @@ export interface AuthTokens {
   cookies: Record<string, string>;
   csrf_token: string;
   session_id: string;
+  bl?: string;
   extracted_at: number;
 }
 

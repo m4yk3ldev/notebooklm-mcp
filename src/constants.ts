@@ -219,7 +219,7 @@ export const BATCHEXECUTE_PATH = "/_/LabsTailwindUi/data/batchexecute";
 export const QUERY_PATH =
   "/_/LabsTailwindUi/data/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateFreeFormStreamed";
 
-export const DEFAULT_BL = "boq_labs-tailwind-frontend_20260108.06_p0";
+export const DEFAULT_BL = "boq_labs-tailwind-frontend_20260218.06_p0";
 
 export const REQUIRED_COOKIES = [
   "SID",
@@ -230,7 +230,7 @@ export const REQUIRED_COOKIES = [
 ];
 
 export const USER_AGENT =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36";
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36";
 
 export const DEFAULT_TIMEOUT = 30_000;
 export const EXTENDED_TIMEOUT = 120_000;
