@@ -215,7 +215,6 @@ export class NotebookLMClient {
       const url = this.buildUrl(rpcId, sourcePath);
       const body = this.buildRequestBody(rpcId, params);
 
-
       const response = await fetch(url, {
         method: "POST",
         headers: {
@@ -570,21 +569,39 @@ export class NotebookLMClient {
     };
   }
 
+  private extractTextFromBlocks(data: any): string {
+    if (!Array.isArray(data) || !Array.isArray(data[0])) return "";
+    let text = "";
+    for (const block of data[0]) {
+      try {
+        // Path discovered via deep inspection: block[2][2][0][0][2][0]
+        const content = block?.[2]?.[2]?.[0]?.[0]?.[2]?.[0];
+        if (typeof content === "string") {
+          text += content;
+        }
+      } catch {
+        // skip malformed blocks
+      }
+    }
+    return text;
+  }
+
   async getSource(
     sourceId: string,
     notebookId: string,
   ): Promise<SourceDetail> {
     const result = await this.execute(
       RPC_IDS.GET_SOURCE,
-      [sourceId, notebookId, [2]],
+      [[sourceId]],
       `/notebook/${notebookId}`,
     );
     const data = result as any[];
+    const meta = data?.[0];
     return {
       id: sourceId,
-      title: data?.[1] || "Untitled",
-      type: SOURCE_TYPES.getName(data?.[3] ?? null),
-      content: data?.[4] || null,
+      title: meta?.[1] || "Untitled",
+      type: SOURCE_TYPES.getName(Array.isArray(meta?.[3]) ? meta[3][1] : meta?.[3]),
+      content: this.extractTextFromBlocks(data?.[3]),
       summary: null,
       keywords: [],
     };
@@ -677,7 +694,13 @@ export class NotebookLMClient {
 
     try {
       const fReq = JSON.stringify([null, JSON.stringify(params)]);
-      const body = `f.req=${encodeURIComponent(fReq)}`;
+      let body = `f.req=${encodeURIComponent(fReq)}`;
+      if (this.csrfToken) {
+        body += `&at=${encodeURIComponent(this.csrfToken)}`;
+      }
+      if (this.sessionId) {
+        body += `&f.sid=${encodeURIComponent(this.sessionId)}`;
+      }
       const url = this.buildQueryUrl(`/notebook/${notebookId}`);
 
       const response = await fetch(url, {
