@@ -153,9 +153,8 @@ async function extractCookiesViaCDP(
     }, timeoutMs);
 
     ws.on("open", () => {
-      send("Network.enable");
       timer = setInterval(() => {
-        send("Network.getCookies", { urls: [BASE_URL, "https://google.com"] });
+        send("Storage.getCookies", {});
       }, 2000);
     });
 
