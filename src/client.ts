@@ -70,8 +70,7 @@ export class NotebookLMClient {
   // ─── Core HTTP/RPC ───────────────────────────────────
 
   private buildRequestBody(rpcId: string, params: unknown): string {
-    const paramsJson = JSON.stringify(params);
-    const fReq = JSON.stringify([[[rpcId, paramsJson, null, "generic"]]]);
+    const fReq = JSON.stringify([[[rpcId, JSON.stringify(params), null, "generic"]]]);
     const parts = [];
     if (this.csrfToken) {
       parts.push(`at=${encodeURIComponent(this.csrfToken)}`);
