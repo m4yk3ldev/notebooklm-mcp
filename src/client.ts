@@ -400,7 +400,7 @@ export class NotebookLMClient {
   async listNotebooks(maxResults = 100): Promise<Notebook[]> {
     const result = await this.execute(
       RPC_IDS.LIST_NOTEBOOKS,
-      [null, maxResults, null, [1]],
+      [null, maxResults],
     );
     if (!Array.isArray(result) || !Array.isArray(result[0])) return [];
 
@@ -416,7 +416,7 @@ export class NotebookLMClient {
   async getNotebook(notebookId: string): Promise<Notebook> {
     const result = await this.execute(
       RPC_IDS.GET_NOTEBOOK,
-      [notebookId, null, [2], null, 0],
+      [notebookId, [2], null, 0],
       `/notebook/${notebookId}`,
     );
     return this.parseNotebook(result);
@@ -425,10 +425,7 @@ export class NotebookLMClient {
   async createNotebook(title: string): Promise<Notebook> {
     const result = await this.execute(RPC_IDS.CREATE_NOTEBOOK, [
       title,
-      null,
-      null,
       [2],
-      [1, null, null, null, null, null, null, null, null, null, [1]],
     ]);
     return this.parseNotebook(result);
   }
