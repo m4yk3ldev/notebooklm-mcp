@@ -424,7 +424,6 @@ export class NotebookLMClient {
   async createNotebook(title: string): Promise<Notebook> {
     const result = await this.execute(RPC_IDS.CREATE_NOTEBOOK, [
       title,
-      [2],
     ]);
     return this.parseNotebook(result);
   }
@@ -1310,7 +1309,7 @@ export class NotebookLMClient {
   async pollStudio(notebookId: string): Promise<StudioArtifact[]> {
     const result = await this.execute(
       RPC_IDS.POLL_STUDIO,
-      [notebookId, [2]],
+      [[2], notebookId],
       `/notebook/${notebookId}`,
     );
 
@@ -1329,11 +1328,12 @@ export class NotebookLMClient {
         4: "failed",
       };
 
+      // Google format: [id, title, type, sources, status, ...]
       artifacts.push({
         id: item[0] || "",
         type: STUDIO_TYPES.getName(item[2] ?? null),
-        status: statusMap[item[3]] || "pending",
-        download_url: item[4] || null,
+        status: statusMap[item[4]] || "pending",
+        download_url: item[5] || null,
       });
     }
 
