@@ -363,7 +363,13 @@ export class NotebookLMClient {
         "Invalid notebook data received from Google. This usually happens if the notebook ID is incorrect, it was deleted, or you don't have permission to access it.",
       );
     }
-    const d = data as any[];
+
+    // Unwrap if Google returns [[notebookData]]
+    let d = data as any[];
+    if (d.length > 0 && Array.isArray(d[0]) && typeof d[0][2] === "string" && d[0][2].includes("-")) {
+      d = d[0];
+    }
+
     const sources: SourceSummary[] = [];
     if (Array.isArray(d[1])) {
       for (const s of d[1]) {
@@ -409,7 +415,7 @@ export class NotebookLMClient {
   async getNotebook(notebookId: string): Promise<Notebook> {
     const result = await this.execute(
       RPC_IDS.GET_NOTEBOOK,
-      [notebookId, [2], null, 0],
+      [notebookId],
       `/notebook/${notebookId}`,
     );
     return this.parseNotebook(result);
