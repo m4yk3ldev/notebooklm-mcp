@@ -673,20 +673,25 @@ export class NotebookLMClient {
       await this.refreshAuthTokens();
     }
 
-    const sourcesNested = sourceIds
-      ? sourceIds.map((sid) => [[sid]])
+    const history = conversationId
+      ? this.conversationHistory.get(conversationId) || []
       : [];
 
-    const history = conversationId
-      ? this.conversationHistory.get(conversationId) || null
-      : null;
+    const sourcesNested = sourceIds
+      ? sourceIds.map((sid) => [[[sid]]])
+      : [];
 
+    // Discovered format: [sources, query, history, config, convId, null, null, notebookId, 1]
     const params = [
       sourcesNested,
       queryText,
       history,
-      [2, null, [1]],
+      [2, null, [1], [1]],
       conversationId || null,
+      null,
+      null,
+      notebookId,
+      1,
     ];
 
     const controller = new AbortController();
@@ -694,13 +699,14 @@ export class NotebookLMClient {
 
     try {
       const fReq = JSON.stringify([null, JSON.stringify(params)]);
-      let body = `f.req=${encodeURIComponent(fReq)}`;
+      let bodyParts = [`f.req=${encodeURIComponent(fReq)}`];
       if (this.csrfToken) {
-        body += `&at=${encodeURIComponent(this.csrfToken)}`;
+        bodyParts.push(`at=${encodeURIComponent(this.csrfToken)}`);
       }
       if (this.sessionId) {
-        body += `&f.sid=${encodeURIComponent(this.sessionId)}`;
+        bodyParts.push(`f.sid=${encodeURIComponent(this.sessionId)}`);
       }
+      const body = bodyParts.join("&");
       const url = this.buildQueryUrl(`/notebook/${notebookId}`);
 
       const response = await fetch(url, {
@@ -717,6 +723,7 @@ export class NotebookLMClient {
           "sec-ch-ua-platform": '"Linux"',
           "X-Goog-Encode-Response-If-Executable": "base64",
           "X-Google-SIDRT": "1",
+          "X-Goog-BatchExecute-Path": "/_/LabsTailwindUi/data/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateFreeFormStreamed",
         },
         body,
         signal: controller.signal,
@@ -737,74 +744,6 @@ export class NotebookLMClient {
       const text = await response.text();
       const parsed = this.parseResponse(text);
 
-      // Check for auth error in the response stream
-      for (const chunk of parsed) {
-        if (Array.isArray(chunk)) {
-          for (const item of chunk) {
-            if (!Array.isArray(item)) continue;
-
-            // Extract Session ID if provided by Google
-            if (item[0] === "af.httprm" && item.length >= 3 && typeof item[2] === "string") {
-              this.sessionId = item[2];
-              this.tokens.session_id = this.sessionId;
-              saveTokens(this.tokens);
-            }
-
-            if (item[0] === "wrb.fr" && Array.isArray(item[5]) && item[5].includes(16)) {
-              if (isRetry) {
-                throw new AuthenticationError("Authentication failed during query retry.");
-              }
-
-              console.error("🔄 Session expired during query. Checking for updated tokens on disk...");
-              try {
-                const { loadTokensFromCache } = await import("./auth.js");
-                const freshTokens = loadTokensFromCache();
-                if (freshTokens && freshTokens.extracted_at > this.tokens.extracted_at) {
-                  console.error("✅ Found fresher tokens on disk. Retrying query with new tokens...");
-                  this.tokens = freshTokens;
-                  this.csrfToken = freshTokens.csrf_token;
-                  this.sessionId = freshTokens.session_id;
-                  return this.query(notebookId, queryText, sourceIds, conversationId, true);
-                }
-              } catch (reloadError) {
-                // ignore
-              }
-
-              console.error("🔄 Effortlessly restoring your connection in the background...");
-              try {
-                let newTokens: AuthTokens;
-                try {
-                  newTokens = await refreshCookiesHeadless();
-                } catch (refreshError) {
-                  console.error("⚠️ Automatic refresh encountered a hiccup. Launching a manual login window to get you back on track.");
-                  newTokens = await runBrowserAuthFlow();
-                }
-                this.tokens = newTokens;
-                this.csrfToken = newTokens.csrf_token;
-                this.sessionId = newTokens.session_id;
-                
-                // Warm up session and allow propagation
-                await fetch(BASE_URL, {
-                  headers: {
-                    Cookie: buildCookieHeader(this.tokens.cookies),
-                    "User-Agent": USER_AGENT,
-                  }
-                });
-                
-                await new Promise(r => setTimeout(r, 2000));
-
-                // Retry once
-                return this.query(notebookId, queryText, sourceIds, conversationId, true);
-              } catch (finalError) {
-                console.error("❌ Authentication failed during query refresh:", (finalError as Error).message);
-                throw new AuthenticationError("Authentication expired. Please re-authenticate via CLI.");
-              }
-            }
-          }
-        }
-      }
-
-      // Find the longest Type 1 answer chunk
       let bestAnswer = "";
       let convId: string | null = conversationId || null;
 
@@ -817,13 +756,15 @@ export class NotebookLMClient {
             if (typeof resultStr === "string") {
               try {
                 const data = JSON.parse(resultStr);
-                if (Array.isArray(data)) {
-                  const answer = data[0];
-                  const type = data[2];
-                  if (type === 1 && typeof answer === "string" && answer.length > bestAnswer.length) {
+                if (Array.isArray(data) && Array.isArray(data[0])) {
+                  // Format: [[answer, null, [sources], null, [formatting]], ...]
+                  const inner = data[0];
+                  const answer = inner[0];
+                  if (typeof answer === "string" && answer.length > bestAnswer.length) {
                     bestAnswer = answer;
                   }
-                  if (data[4]) convId = data[4];
+                  // Conversation ID is usually in the meta block of the first element
+                  if (inner[10]) convId = String(inner[10]);
                 }
               } catch {
                 // skip
@@ -833,19 +774,23 @@ export class NotebookLMClient {
         }
       }
 
-      // Store conversation history for follow-ups
-      if (convId) {
-        const existing = this.conversationHistory.get(convId) || [];
-        existing.push([queryText, null, 1]);
-        existing.push([bestAnswer, null, 2]);
-        this.conversationHistory.set(convId, existing);
+      // Store history for next turn
+      if (convId && bestAnswer) {
+        const history = this.conversationHistory.get(convId) || [];
+        history.push([queryText, null, 1]);
+        history.push([bestAnswer, null, 2]);
+        this.conversationHistory.set(convId, history.slice(-10)); // Keep last 10 turns
       }
 
       return {
         answer: bestAnswer,
         conversation_id: convId,
-        sources_used: sourceIds || [],
       };
+    } catch (e) {
+      if ((e as Error).name === "AbortError") {
+        throw new Error("Query timed out. Try increasing the timeout with --query-timeout.");
+      }
+      throw e;
     } finally {
       clearTimeout(timer);
     }
