@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.25] - 2026-02-26
+
+### Added
+- **Comprehensive Validation Suite**: Added 32 dedicated validation plans in `docs/plans/` to verify every tool in the MCP server.
+- **CI Test Gate**: Updated GitHub Actions to run full test suites before allowing publication to NPM.
+
+### Fixed
+- **RPC Stability**: Implemented automatic "unwrapping" of Google's nested RPC response format, significantly improving reliability for `notebook_get` and `notebook_list`.
+- **Param Simplification**: Corrected permission errors by simplifying RPC parameter structures for notebook creation and retrieval.
+- **Studio Polling**: Fixed artifact status parsing in `pollStudio` to correctly identify completed generation tasks.
+- **Auth Robustness**: Updated CDP authentication to verify the NotebookLM page has fully loaded before resolving, preventing premature resolution with stale cookies.
+- **Error Masking**: Eliminated silent failures in RPC retries; the server now correctly propagates authentication errors.
+
+### Removed
+- All diagnostic and debug `console.error` logs for a clean production state.
+
 ## [0.1.22] - 2026-02-21
 
 ### Changed
