@@ -159,7 +159,6 @@ export class NotebookLMClient {
       if (!Array.isArray(chunk)) continue;
       for (const item of chunk) {
         if (!Array.isArray(item)) continue;
-        console.error(`[RPC DEBUG] Item: ${item[0]}, ID: ${item[1]}, Data exists: ${!!item[2]}`);
 
         // Extract Session ID if provided by Google
         if (item[0] === "af.httprm" && item.length >= 3 && typeof item[2] === "string") {
@@ -170,7 +169,6 @@ export class NotebookLMClient {
 
         if (item.length < 3) continue;
         if (item[0] === "wrb.fr" && item[1] === rpcId) {
-          console.error(`[RPC DEBUG] Match found! Item: ${JSON.stringify(item)}`);
           // Check for auth error (code 16)
           if (
             item.length > 6 &&
@@ -178,12 +176,9 @@ export class NotebookLMClient {
             Array.isArray(item[5]) &&
             item[5].includes(16)
           ) {
-            // If it's the first try, throw so we can refresh
-            if (!isRetry) {
-              throw new AuthenticationError(
-                "Authentication expired. Run `npx @m4ykeldev/notebooklm-mcp auth` to re-authenticate.",
-              );
-            }
+            throw new AuthenticationError(
+              "Authentication expired. Run `npx @m4ykeldev/notebooklm-mcp auth` to re-authenticate.",
+            );
           }
 
           const resultStr = item[2];
@@ -253,7 +248,6 @@ export class NotebookLMClient {
       }
 
       const text = await response.text();
-      console.error(`[SERVER RESPONSE] Raw text starts with: ${text.substring(0, 300)}`);
       const parsed = this.parseResponse(text);
 
       try {
@@ -713,7 +707,6 @@ export class NotebookLMClient {
       }
 
       const text = await response.text();
-      console.error(`[SERVER RESPONSE] Raw text starts with: ${text.substring(0, 300)}`);
       const parsed = this.parseResponse(text);
 
       // Check for auth error in the response stream
