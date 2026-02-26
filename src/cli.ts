@@ -48,8 +48,8 @@ program
     try {
       await runBrowserAuthFlow();
     } catch (error) {
-      console.log(`\n⚠️ Smart Authentication failed: ${(error as Error).message}`);
-      console.log("Falling back to manual authentication flow...\n");
+      console.error(`\n⚠️ Smart Authentication failed: ${(error as Error).message}`);
+      console.error("Falling back to manual authentication flow...\n");
       await runAuthFlow();
     }
   });

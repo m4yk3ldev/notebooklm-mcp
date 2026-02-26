@@ -11,7 +11,7 @@ export const sourceTools: McpTool<any>[] = [
       source_id: z.string().describe("The source ID"),
     },
     execute: async (client, { notebook_id, source_id }) => {
-      const source = await client.getSource(notebook_id, source_id);
+      const source = await client.getSource(source_id, notebook_id);
       return { source };
     },
   },
@@ -114,7 +114,7 @@ export const sourceTools: McpTool<any>[] = [
     },
     execute: async (client, { notebook_id, source_id, confirm }) => {
       if (!confirm) return pendingConfirmation("Set confirm=true to delete this source. This cannot be undone.");
-      await client.deleteSource(notebook_id, source_id);
+      await client.deleteSource(source_id, notebook_id);
       return { message: "Source deleted" };
     },
   },

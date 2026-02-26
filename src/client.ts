@@ -187,14 +187,15 @@ export class NotebookLMClient {
     params: unknown,
     sourcePath = "/",
     timeout = DEFAULT_TIMEOUT,
+    isRetry = false,
   ): Promise<unknown> {
-    const url = this.buildUrl(rpcId, sourcePath);
-    const body = this.buildRequestBody(rpcId, params);
-
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
 
     try {
+      const url = this.buildUrl(rpcId, sourcePath);
+      const body = this.buildRequestBody(rpcId, params);
+
       const response = await fetch(url, {
         method: "POST",
         headers: {
@@ -215,14 +216,14 @@ export class NotebookLMClient {
       try {
         return this.extractRpcResult(parsed, rpcId);
       } catch (e) {
-        if (e instanceof AuthenticationError) {
-          console.log("🔄 Session expired. Effortlessly restoring your connection in the background...");
+        if (e instanceof AuthenticationError && !isRetry) {
+          console.error("🔄 Session expired. Effortlessly restoring your connection in the background...");
           try {
             let newTokens: AuthTokens;
             try {
               newTokens = await refreshCookiesHeadless();
             } catch (refreshError) {
-              console.log("⚠️ Automatic refresh encountered a hiccup. Launching a manual login window to get you back on track.");
+              console.error("⚠️ Automatic refresh encountered a hiccup. Launching a manual login window to get you back on track.");
               newTokens = await runBrowserAuthFlow();
             }
 
@@ -233,8 +234,8 @@ export class NotebookLMClient {
             // Re-extract CSRF/SID from the page using the new cookies
             await this.refreshAuthTokens();
 
-            // Retry once
-            return this.executeOnce(rpcId, params, sourcePath, timeout);
+            // Retry once by calling itself with isRetry = true
+            return this.execute(rpcId, params, sourcePath, timeout, true);
           } catch (finalError) {
             console.error("❌ Authentication failed:", (finalError as Error).message);
             throw e; // Propagate original AuthenticationError
@@ -242,41 +243,6 @@ export class NotebookLMClient {
         }
         throw e;
       }
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
-  private async executeOnce(
-    rpcId: string,
-    params: unknown,
-    sourcePath: string,
-    timeout: number,
-  ): Promise<unknown> {
-    const url = this.buildUrl(rpcId, sourcePath);
-    const body = this.buildRequestBody(rpcId, params);
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeout);
-
-    try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-          Origin: BASE_URL,
-          Referer: `${BASE_URL}/`,
-          Cookie: buildCookieHeader(this.tokens.cookies),
-          "X-Same-Domain": "1",
-          "User-Agent": USER_AGENT,
-        },
-        body,
-        signal: controller.signal,
-      });
-
-      const text = await response.text();
-      const parsed = this.parseResponse(text);
-      return this.extractRpcResult(parsed, rpcId);
     } finally {
       clearTimeout(timer);
     }
@@ -300,8 +266,19 @@ export class NotebookLMClient {
       const csrf = extractCsrfFromPage(html);
       const sid = extractSessionIdFromPage(html);
 
-      if (csrf) this.csrfToken = csrf;
-      if (sid) this.sessionId = sid;
+      if (csrf) {
+        this.csrfToken = csrf;
+        console.error("✅ New CSRF token extracted.");
+      } else {
+        console.error("⚠️ Failed to extract CSRF token from page.");
+      }
+      
+      if (sid) {
+        this.sessionId = sid;
+        console.error("✅ New Session ID extracted.");
+      } else {
+        console.error("⚠️ Failed to extract Session ID from page.");
+      }
 
       this.tokens.csrf_token = this.csrfToken;
       this.tokens.session_id = this.sessionId;
@@ -610,6 +587,7 @@ export class NotebookLMClient {
     queryText: string,
     sourceIds?: string[],
     conversationId?: string,
+    isRetry = false,
   ): Promise<QueryResponse> {
     const sourcesNested = sourceIds
       ? sourceIds.map((sid) => [[sid]])
@@ -627,14 +605,14 @@ export class NotebookLMClient {
       conversationId || null,
     ];
 
-    const fReq = JSON.stringify([null, JSON.stringify(params)]);
-    const body = `f.req=${encodeURIComponent(fReq)}&`;
-
-    const url = this.buildQueryUrl(`/notebook/${notebookId}`);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.queryTimeout);
 
     try {
+      const fReq = JSON.stringify([null, JSON.stringify(params)]);
+      const body = `f.req=${encodeURIComponent(fReq)}&`;
+      const url = this.buildQueryUrl(`/notebook/${notebookId}`);
+
       const response = await fetch(url, {
         method: "POST",
         headers: {
@@ -657,20 +635,34 @@ export class NotebookLMClient {
         if (Array.isArray(chunk)) {
           for (const item of chunk) {
             if (Array.isArray(item) && item[0] === "wrb.fr" && Array.isArray(item[5]) && item[5].includes(16)) {
-              console.log("🔄 Session expired during query. Effortlessly restoring your connection in the background...");
-              let newTokens: AuthTokens;
-              try {
-                newTokens = await refreshCookiesHeadless();
-              } catch (refreshError) {
-                console.log("⚠️ Automatic refresh encountered a hiccup. Launching a manual login window to get you back on track.");
-                newTokens = await runBrowserAuthFlow();
+              if (isRetry) {
+                throw new AuthenticationError("Authentication failed during query retry.");
               }
-              this.tokens = newTokens;
-              this.csrfToken = newTokens.csrf_token;
-              this.sessionId = newTokens.session_id;
-              await this.refreshAuthTokens();
-              // Retry once
-              return this.query(notebookId, queryText, sourceIds, conversationId);
+
+              console.error("🔄 Session expired during query. Effortlessly restoring your connection in the background...");
+              try {
+                let newTokens: AuthTokens;
+                try {
+                  newTokens = await refreshCookiesHeadless();
+                } catch (refreshError) {
+                  console.error("⚠️ Automatic refresh encountered a hiccup. Launching a manual login window to get you back on track.");
+                  newTokens = await runBrowserAuthFlow();
+                }
+                this.tokens = newTokens;
+                this.csrfToken = newTokens.csrf_token;
+                this.sessionId = newTokens.session_id;
+                
+                await this.refreshAuthTokens();
+                
+                // Small delay to allow tokens to propagate
+                await new Promise(r => setTimeout(r, 500));
+
+                // Retry once
+                return this.query(notebookId, queryText, sourceIds, conversationId, true);
+              } catch (finalError) {
+                console.error("❌ Authentication failed during query refresh:", (finalError as Error).message);
+                throw new AuthenticationError("Authentication expired. Please re-authenticate via CLI.");
+              }
             }
           }
         }

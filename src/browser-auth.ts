@@ -196,7 +196,7 @@ async function extractCookiesViaCDP(
             cleanup();
             resolve(tokens);
           } else if (showProgress) {
-            process.stdout.write(".");
+            process.stderr.write(".");
           }
         }
       } catch (e) {
@@ -207,12 +207,12 @@ async function extractCookiesViaCDP(
 }
 
 export async function refreshCookiesHeadless(): Promise<AuthTokens> {
-  console.log("🔄 Attempting background session refresh...");
+  console.error("🔄 Attempting background session refresh...");
   const chromeProcess = await launchChrome(true);
 
   try {
-    const tokens = await extractCookiesViaCDP(15000, false);
-    console.log("✅ Background refresh successful.");
+    const tokens = await extractCookiesViaCDP(30000, false);
+    console.error("✅ Background refresh successful.");
     return tokens;
   } catch (error) {
     throw error;
@@ -223,18 +223,18 @@ export async function refreshCookiesHeadless(): Promise<AuthTokens> {
 }
 
 export async function runBrowserAuthFlow(): Promise<AuthTokens> {
-  console.log("✨ Initializing Smart Authentication... (Setting up a secure session)");
-  console.log(
+  console.error("✨ Initializing Smart Authentication... (Setting up a secure session)");
+  console.error(
     "   (A dedicated profile will be used at ~/.notebooklm-mcp/chrome-profile)",
   );
 
   const chromeProcess = await launchChrome(false);
 
   try {
-    console.log("\n🔓 Ready for login! If you're already signed into Google, we'll handle the rest automatically.\n");
+    console.error("\n🔓 Ready for login! If you're already signed into Google, we'll handle the rest automatically.\n");
 
     const tokens = await extractCookiesViaCDP(120000, true);
-    console.log("\n✅ Connection secured! Your NotebookLM session is now synchronized.");
+    console.error("\n✅ Connection secured! Your NotebookLM session is now synchronized.");
     return tokens;
   } catch (error) {
     if (error instanceof Error) {
