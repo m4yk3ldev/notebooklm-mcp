@@ -5,13 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.25] - 2026-02-26
+## [0.1.26] - 2026-02-26
 
 ### Added
 - **Comprehensive Validation Suite**: Added 32 dedicated validation plans in `docs/plans/` to verify every tool in the MCP server.
 - **CI Test Gate**: Updated GitHub Actions to run full test suites before allowing publication to NPM.
 
 ### Fixed
+- **GitHub Release Automation**: Fixed permission issues in CI by providing an explicit `GITHUB_TOKEN` for the Release step.
 - **RPC Stability**: Implemented automatic "unwrapping" of Google's nested RPC response format, significantly improving reliability for `notebook_get` and `notebook_list`.
 - **Param Simplification**: Corrected permission errors by simplifying RPC parameter structures for notebook creation and retrieval.
 - **Studio Polling**: Fixed artifact status parsing in `pollStudio` to correctly identify completed generation tasks.
