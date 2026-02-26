@@ -51,6 +51,7 @@ export const RPC_IDS = {
   CHECK_FRESHNESS: "yR9Yof",
   SYNC_DRIVE: "FLmJqe",
   DELETE_SOURCE: "tGMBJ",
+  QUERY: "ZAnZ8",
   GET_CONVERSATIONS: "hPTbtc",
   PREFERENCES: "hT54vc",
   SUBSCRIPTION: "ozz5Z",
