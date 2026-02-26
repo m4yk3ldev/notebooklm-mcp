@@ -752,6 +752,18 @@ export class NotebookLMClient {
         for (const item of chunk) {
           if (!Array.isArray(item) || item.length < 3) continue;
           if (item[0] === "wrb.fr") {
+            // Check for auth error (code 16)
+            if (
+              item.length > 6 &&
+              item[6] === "generic" &&
+              Array.isArray(item[5]) &&
+              item[5].includes(16)
+            ) {
+              throw new AuthenticationError(
+                "Authentication expired. Run `npx @m4ykeldev/notebooklm-mcp auth` to re-authenticate.",
+              );
+            }
+
             const resultStr = item[2];
             if (typeof resultStr === "string") {
               try {
@@ -787,6 +799,54 @@ export class NotebookLMClient {
         conversation_id: convId,
       };
     } catch (e) {
+      if (e instanceof AuthenticationError && !isRetry) {
+        console.error("🔄 Session expired. Checking for updated tokens on disk...");
+        
+        // Try to reload tokens from disk first
+        try {
+          const { loadTokensFromCache } = await import("./auth.js");
+          const freshTokens = loadTokensFromCache();
+          if (freshTokens && freshTokens.extracted_at > this.tokens.extracted_at) {
+            console.error("✅ Found fresher tokens on disk. Retrying with new tokens...");
+            this.tokens = freshTokens;
+            this.csrfToken = freshTokens.csrf_token;
+            this.sessionId = freshTokens.session_id;
+            return this.query(notebookId, queryText, sourceIds, conversationId, true);
+          }
+        } catch (reloadError) {
+          // ignore
+        }
+
+        console.error("🔄 Effortlessly restoring your connection in the background...");
+        try {
+          let newTokens: AuthTokens;
+          try {
+            newTokens = await refreshCookiesHeadless();
+          } catch (refreshError) {
+            console.error("⚠️ Automatic refresh encountered a hiccup. Launching a manual login window to get you back on track.");
+            newTokens = await runBrowserAuthFlow();
+          }
+
+          this.tokens = newTokens;
+          this.csrfToken = newTokens.csrf_token;
+          this.sessionId = newTokens.session_id;
+
+          // Warm up session with a real RPC call (Settings)
+          try {
+            await this.execute(RPC_IDS.SETTINGS, [null, 1], "/", 5000, true);
+          } catch {
+            // ignore warmup error
+          }
+          
+          await new Promise(r => setTimeout(r, 1000));
+
+          // Retry original request
+          return this.query(notebookId, queryText, sourceIds, conversationId, true);
+        } catch (finalError) {
+          console.error("❌ Authentication failed:", (finalError as Error).message);
+          throw e;
+        }
+      }
       if ((e as Error).name === "AbortError") {
         throw new Error("Query timed out. Try increasing the timeout with --query-timeout.");
       }
