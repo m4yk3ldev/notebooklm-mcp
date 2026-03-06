@@ -86,6 +86,7 @@ export class NotebookLMClient {
     this.reqId++;
     const params: Record<string, string> = {
       rpcids: rpcId,
+      "source-path": sourcePath,
       bl: this.tokens.bl || process.env.NOTEBOOKLM_BL || DEFAULT_BL,
       hl: "en-US",
       _reqid: String(this.reqId),
@@ -651,12 +652,18 @@ export class NotebookLMClient {
     }
   }
 
-  async deleteSource(sourceId: string, notebookId: string): Promise<void> {
-    await this.execute(
+  async deleteSource(sourceId: string, notebookId: string): Promise<unknown> {
+    // Google expects triple-nested sourceId: [[[sourceId]], [2]]
+    // Confirmed by multiple reference implementations (notebooklm-py, notebooklm-kit)
+    const result = await this.execute(
       RPC_IDS.DELETE_SOURCE,
-      [sourceId, notebookId],
+      [[[sourceId]], [2]],
       `/notebook/${notebookId}`,
     );
+    if (result === null) {
+      console.error(`⚠️ deleteSource: RPC returned null for source ${sourceId} in notebook ${notebookId}. The operation may not have succeeded.`);
+    }
+    return result;
   }
 
   // ─── Query Method ────────────────────────────────────
@@ -946,14 +953,52 @@ export class NotebookLMClient {
     notebookId: string,
     taskId: string,
     sourceIndices?: number[],
-  ): Promise<void> {
-    const indices = sourceIndices || null;
-    await this.execute(
+  ): Promise<unknown> {
+    // First, poll for the research task to get full source data
+    const tasks = await this.pollResearch(notebookId, taskId);
+    const task = tasks.find((t) => t.task_id === taskId);
+    if (!task) {
+      throw new Error(`Research task ${taskId} not found`);
+    }
+    if (task.status === "in_progress") {
+      throw new Error(`Research task ${taskId} is still in progress`);
+    }
+
+    // Filter sources by indices if provided, otherwise use all
+    let sourcesToImport = task.sources;
+    if (sourceIndices && sourceIndices.length > 0) {
+      sourcesToImport = sourceIndices
+        .filter((i) => i >= 0 && i < task.sources.length)
+        .map((i) => task.sources[i]);
+    }
+
+    // Build source objects in Google's expected format
+    // Each source is an 11-element array with URL+title at position [2], flag 2 at position [10]
+    // Deep research reports (type "deep_report") are not importable and must be skipped
+    const sourceArray = sourcesToImport
+      .filter((s) => s.url && s.type !== "deep_report")
+      .map((s) => [
+        null, null,
+        [s.url, s.title || "Untitled"],
+        null, null, null, null, null, null, null,
+        2,
+      ]);
+
+    if (sourceArray.length === 0) {
+      throw new Error("No valid sources to import (all sources lack URLs)");
+    }
+
+    // Google expects: [null, [1], taskId, notebookId, sourceObjectArray]
+    const result = await this.execute(
       RPC_IDS.IMPORT_RESEARCH,
-      [notebookId, taskId, indices],
+      [null, [1], taskId, notebookId, sourceArray],
       `/notebook/${notebookId}`,
       EXTENDED_TIMEOUT,
     );
+    if (result === null) {
+      console.error(`⚠️ importResearch: RPC returned null for task ${taskId}. The operation may not have succeeded.`);
+    }
+    return result;
   }
 
   // ─── Studio Methods ──────────────────────────────────
