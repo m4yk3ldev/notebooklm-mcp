@@ -38,8 +38,8 @@ export const researchTools: McpTool<any>[] = [
       source_indices: z.array(z.number()).optional().describe("Specific source indices to import (omit for all)"),
     },
     execute: async (client, { notebook_id, task_id, source_indices }) => {
-      await client.importResearch(notebook_id, task_id, source_indices);
-      return { message: "Research sources imported" };
+      const result = await client.importResearch(notebook_id, task_id, source_indices);
+      return { message: "Research sources imported", rpc_result: result };
     },
   },
 ];

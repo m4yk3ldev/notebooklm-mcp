@@ -114,8 +114,8 @@ export const sourceTools: McpTool<any>[] = [
     },
     execute: async (client, { notebook_id, source_id, confirm }) => {
       if (!confirm) return pendingConfirmation("Set confirm=true to delete this source. This cannot be undone.");
-      await client.deleteSource(source_id, notebook_id);
-      return { message: "Source deleted" };
+      const result = await client.deleteSource(source_id, notebook_id);
+      return { message: "Source deleted", rpc_result: result };
     },
   },
 ];
