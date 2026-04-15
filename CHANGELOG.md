@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.31] - 2026-04-15
+
+### Documentation
+- **Backfilled CHANGELOG**: Added missing entries for `0.1.27` and `0.1.28` (audio/video transcript extraction and `notebook_query` RPC restoration).
+- **Refreshed Contributor Guides**: `CONTRIBUTING.md`, `GEMINI.md`, and `CLAUDE.md` now reflect the real `src/tools/` registration framework, the `npm test` workflow, and the raw-CDP (no Puppeteer/Playwright) auth flow.
+
+### Security
+- **Hardened `.gitignore`**: Local cookie/auth artifacts (`cokie.txt`, `cookie.txt`, `cookies.txt`, `auth.json`, `*.cookies`) are now ignored by default to prevent accidental credential commits.
+- **Purged Leaked Cookie Artifact**: A previously committed `cokie.txt` containing real session cookies was removed from the entire git history; affected sessions have been rotated.
+
 ## [0.1.30] - 2026-02-26
 
 ### Fixed
