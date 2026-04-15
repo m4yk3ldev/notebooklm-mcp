@@ -19,7 +19,12 @@ node dist/cli.js serve
 node dist/cli.js auth
 ```
 
-There are no test scripts. TypeScript strict mode is the primary quality gate — fix all type errors before building.
+```bash
+# Run the test suite (vitest + MSW)
+npm test
+```
+
+TypeScript strict mode is the primary quality gate — fix all type errors before building. CI runs `npm test` before publishing to NPM.
 
 ## Architecture
 

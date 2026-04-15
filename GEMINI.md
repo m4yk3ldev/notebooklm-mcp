@@ -26,8 +26,8 @@ The project follows a modular architecture centered around the MCP specification
   - `src/tools/`: Directory containing modular tool definitions (e.g., `notebook.ts`, `source.ts`, `query.ts`, `studio.ts`).
   - `src/tools/index.ts`: Central registration point for all tools.
 - **Authentication**:
-  - `src/auth.ts`: Logic for token loading, saving, and browser-based cookie extraction.
-  - `src/browser-auth.ts`: Puppeteer/Playwright-style browser automation for interactive auth.
+  - `src/auth.ts`: Logic for token loading, saving, validation, and the manual auth flow.
+  - `src/browser-auth.ts`: Launches Chrome with `--remote-debugging-port` and drives it directly via the Chrome DevTools Protocol (CDP) over a raw `ws` WebSocket — no Puppeteer/Playwright dependency.
 
 ## Building and Running
 
@@ -35,7 +35,8 @@ The project follows a modular architecture centered around the MCP specification
 - **Install Dependencies**: `npm install`
 - **Build**: `npm run build` (Outputs to `dist/`)
 - **Watch Mode**: `npm run dev`
-- **Lint/Format**: (Check `package.json` for additions; currently relies on TypeScript for basic checks)
+- **Tests**: `npm test` (vitest + MSW; CI runs this before publishing to NPM)
+- **Lint/Format**: TypeScript strict mode is the primary quality gate.
 
 ### Running the Server
 ```bash

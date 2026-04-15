@@ -3,3 +3,10 @@ dist/
 *.tgz
 .env
 .npmrc
+
+# Local auth artifacts — never commit
+cokie.txt
+cookie.txt
+cookies.txt
+auth.json
+*.cookies

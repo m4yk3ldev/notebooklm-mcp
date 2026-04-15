@@ -12,6 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Test Suite Integrity**: Corrected parsing logic in unit tests to align with Google's nested response format.
 - **Cleaner Test Output**: Added mocks for background warm-up RPC calls (Settings) to eliminate noisy MSW warnings during test execution.
 
+## [0.1.28] - 2026-02-26
+
+### Fixed
+- **`notebook_query` Restoration**: Reimplemented the query RPC against Google's newly discovered request structure with nested response parsing, restoring grounded Q&A after a backend change broke the previous format.
+
+## [0.1.27] - 2026-02-26
+
+### Fixed
+- **Studio Transcript Extraction**: Audio and video overview transcriptions are now extracted from Google's nested block format, so `studio_status` returns the full transcript instead of an empty payload.
+
 ## [0.1.26] - 2026-02-26
 
 ### Added
