@@ -43,9 +43,10 @@ jobs:
       - run: corepack prepare npm@11.5.1 --activate
       - run: npm ci
       - run: npm run build
+      # Trusted Publisher (OIDC) — no NODE_AUTH_TOKEN. Passing an
+      # empty token makes setup-node's .npmrc fall back to token
+      # auth and fail with ENEEDAUTH before OIDC is tried.
       - run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
