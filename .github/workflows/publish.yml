@@ -31,21 +31,20 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      # Do NOT pass registry-url: setup-node would write an
+      # .npmrc with _authToken=${NODE_AUTH_TOKEN}, and a stale
+      # NPM_TOKEN secret would sabotage OIDC. publishConfig.registry
+      # in package.json already points to registry.npmjs.org.
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          registry-url: 'https://registry.npmjs.org'
       # npm >= 11.5.1 is required for OIDC Trusted Publishers.
-      # Use corepack instead of 'npm install -g' to sidestep the
-      # self-upgrade MODULE_NOT_FOUND bug in the bundled npm on
-      # node 22.22.2.
+      # Use corepack to sidestep the self-upgrade MODULE_NOT_FOUND
+      # bug in the bundled npm on node 22.22.2.
       - run: corepack enable
       - run: corepack prepare npm@11.5.1 --activate
       - run: npm ci
       - run: npm run build
-      # Trusted Publisher (OIDC) — no NODE_AUTH_TOKEN. Passing an
-      # empty token makes setup-node's .npmrc fall back to token
-      # auth and fail with ENEEDAUTH before OIDC is tried.
       - run: npm publish --access public
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
