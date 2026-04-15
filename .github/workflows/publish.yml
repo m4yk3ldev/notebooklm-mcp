@@ -35,24 +35,14 @@ jobs:
       # .npmrc with _authToken=${NODE_AUTH_TOKEN}, and a stale
       # NPM_TOKEN secret would sabotage OIDC. publishConfig.registry
       # in package.json already points to registry.npmjs.org.
+      # Node 24 ships with npm >= 11.5.1 which supports
+      # OIDC Trusted Publishers (node 22.x bundles npm 10.x).
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
-      # npm >= 11.5.1 is required for OIDC Trusted Publishers.
-      # Use corepack to sidestep the self-upgrade MODULE_NOT_FOUND
-      # bug in the bundled npm on node 22.22.2.
-      - run: corepack enable
-      - run: corepack prepare npm@11.5.1 --activate
-      - name: Debug npm env
-        run: |
-          which npm
-          npm --version
-          node --version
-          echo "ACTIONS_ID_TOKEN_REQUEST_URL is set: ${ACTIONS_ID_TOKEN_REQUEST_URL:+yes}"
-          echo "ACTIONS_ID_TOKEN_REQUEST_TOKEN is set: ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:+yes}"
+          node-version: '24'
       - run: npm ci
       - run: npm run build
-      - run: npm publish --access public --loglevel verbose
+      - run: npm publish --access public
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
