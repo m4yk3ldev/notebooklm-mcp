@@ -35,6 +35,10 @@ jobs:
         with:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
+      # npm >= 11.5.1 is required for OIDC Trusted Publishers.
+      # Pin a known-good version to sidestep the self-upgrade
+      # MODULE_NOT_FOUND bug in the bundled npm on node 22.22.2.
+      - run: npm install -g npm@11
       - run: npm ci
       - run: npm run build
       - run: npm publish --access public
