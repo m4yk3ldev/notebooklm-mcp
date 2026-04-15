@@ -43,9 +43,16 @@ jobs:
       # bug in the bundled npm on node 22.22.2.
       - run: corepack enable
       - run: corepack prepare npm@11.5.1 --activate
+      - name: Debug npm env
+        run: |
+          which npm
+          npm --version
+          node --version
+          echo "ACTIONS_ID_TOKEN_REQUEST_URL is set: ${ACTIONS_ID_TOKEN_REQUEST_URL:+yes}"
+          echo "ACTIONS_ID_TOKEN_REQUEST_TOKEN is set: ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:+yes}"
       - run: npm ci
       - run: npm run build
-      - run: npm publish --access public
+      - run: npm publish --access public --loglevel verbose
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
