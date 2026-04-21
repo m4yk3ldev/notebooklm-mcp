@@ -159,6 +159,173 @@ describe("loadTokensFromCache / saveTokens", () => {
   });
 });
 
+describe("showTokens", () => {
+  it("logs a warning when no cached tokens", async () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const { showTokens } = await importAuth();
+    showTokens();
+    expect(spy).toHaveBeenCalledWith("No cached tokens found.");
+    spy.mockRestore();
+  });
+
+  it("logs cookie count and required presence when cache exists", async () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const { saveTokens, showTokens } = await importAuth();
+    saveTokens({
+      cookies: { SID: "a", HSID: "b", SSID: "c", APISID: "d", SAPISID: "e" },
+      csrf_token: "t",
+      session_id: "s",
+      extracted_at: Date.now() / 1000,
+    });
+    showTokens();
+    const log = spy.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(log).toContain("5 (SID");
+    expect(log).toContain("Required cookies present: yes");
+    expect(log).toContain("CSRF token: present");
+    spy.mockRestore();
+  });
+});
+
+describe("runFileImport", () => {
+  it("throws when no path supplied", async () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const { runFileImport } = await importAuth();
+    await expect(runFileImport()).rejects.toThrow(/cookie file path/);
+    spy.mockRestore();
+  });
+
+  it("throws when file lacks required cookies", async () => {
+    const filePath = join(tempHome, "cookies.txt");
+    writeFileSync(filePath, "SID=only-this");
+    const { runFileImport } = await importAuth();
+    await expect(runFileImport(filePath)).rejects.toThrow(/Missing required cookies/);
+  });
+
+  it("parses multi-line cookie file, ignores comments, saves tokens", async () => {
+    const filePath = join(tempHome, "cookies.txt");
+    writeFileSync(
+      filePath,
+      "# a comment\nSID=a; HSID=b; SSID=c\nAPISID=d; SAPISID=e\n",
+    );
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const { runFileImport, loadTokensFromCache } = await importAuth();
+    const tokens = await runFileImport(filePath);
+    expect(tokens.cookies.SID).toBe("a");
+    expect(tokens.cookies.APISID).toBe("d");
+    expect(loadTokensFromCache()!.cookies.SID).toBe("a");
+    spy.mockRestore();
+  });
+});
+
+describe("runAuthFlow", () => {
+  const originalPlatform = process.platform;
+  let readlineMock: any;
+  let execSyncMock: any;
+
+  beforeEach(() => {
+    readlineMock = { createInterface: vi.fn() };
+    execSyncMock = vi.fn();
+  });
+
+  it("saves cookies from stdin and returns tokens", async () => {
+    vi.doMock("node:readline", () => readlineMock);
+    vi.doMock("node:child_process", () => ({ execSync: execSyncMock }));
+    readlineMock.createInterface.mockReturnValue({
+      question: (_prompt: string, cb: (ans: string) => void) =>
+        cb("SID=a; HSID=b; SSID=c; APISID=d; SAPISID=e"),
+      close: vi.fn(),
+    });
+
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const { runAuthFlow, loadTokensFromCache } = await importAuth();
+    const tokens = await runAuthFlow();
+    expect(tokens.cookies.SID).toBe("a");
+    expect(loadTokensFromCache()).not.toBeNull();
+    expect(execSyncMock).toHaveBeenCalled(); // opened browser
+    spy.mockRestore();
+    vi.doUnmock("node:readline");
+    vi.doUnmock("node:child_process");
+  });
+
+  it("throws when stdin returns empty cookie", async () => {
+    vi.doMock("node:readline", () => readlineMock);
+    vi.doMock("node:child_process", () => ({ execSync: execSyncMock }));
+    readlineMock.createInterface.mockReturnValue({
+      question: (_p: string, cb: (ans: string) => void) => cb(""),
+      close: vi.fn(),
+    });
+
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const { runAuthFlow } = await importAuth();
+    await expect(runAuthFlow()).rejects.toThrow(/No cookie string/);
+    spy.mockRestore();
+    vi.doUnmock("node:readline");
+    vi.doUnmock("node:child_process");
+  });
+
+  it("throws when stdin cookies missing required fields", async () => {
+    vi.doMock("node:readline", () => readlineMock);
+    vi.doMock("node:child_process", () => ({ execSync: execSyncMock }));
+    readlineMock.createInterface.mockReturnValue({
+      question: (_p: string, cb: (ans: string) => void) => cb("SID=only"),
+      close: vi.fn(),
+    });
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const { runAuthFlow } = await importAuth();
+    await expect(runAuthFlow()).rejects.toThrow(/Invalid cookie string/);
+    spy.mockRestore();
+    vi.doUnmock("node:readline");
+    vi.doUnmock("node:child_process");
+  });
+
+  it("falls back gracefully when browser open fails", async () => {
+    vi.doMock("node:readline", () => readlineMock);
+    vi.doMock("node:child_process", () => ({
+      execSync: vi.fn(() => {
+        throw new Error("no xdg-open");
+      }),
+    }));
+    readlineMock.createInterface.mockReturnValue({
+      question: (_p: string, cb: (ans: string) => void) =>
+        cb("SID=a; HSID=b; SSID=c; APISID=d; SAPISID=e"),
+      close: vi.fn(),
+    });
+
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const { runAuthFlow } = await importAuth();
+    await expect(runAuthFlow()).resolves.toBeDefined();
+    spy.mockRestore();
+    vi.doUnmock("node:readline");
+    vi.doUnmock("node:child_process");
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process, "platform", { value: originalPlatform });
+  });
+
+  it.each(["linux", "darwin", "win32"])(
+    "openInBrowser handles %s platform",
+    async (platform) => {
+      Object.defineProperty(process, "platform", { value: platform });
+      vi.doMock("node:readline", () => readlineMock);
+      vi.doMock("node:child_process", () => ({ execSync: execSyncMock }));
+      readlineMock.createInterface.mockReturnValue({
+        question: (_p: string, cb: (ans: string) => void) =>
+          cb("SID=a; HSID=b; SSID=c; APISID=d; SAPISID=e"),
+        close: vi.fn(),
+      });
+
+      const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+      const { runAuthFlow } = await importAuth();
+      await runAuthFlow();
+      expect(execSyncMock).toHaveBeenCalled();
+      spy.mockRestore();
+      vi.doUnmock("node:readline");
+      vi.doUnmock("node:child_process");
+    },
+  );
+});
+
 describe("loadTokens resolution order", () => {
   it("prefers env over cache", async () => {
     const dir = join(tempHome, ".notebooklm-mcp");

@@ -13,12 +13,11 @@ export default defineConfig({
         "src/types.ts",
       ],
       // Floor current baseline so regressions fail CI loud.
-      // Raise as coverage grows (cli.ts, browser-auth.ts, client.ts remainders).
       thresholds: {
-        statements: 49,
-        branches: 43,
-        functions: 57,
-        lines: 49,
+        statements: 95,
+        branches: 80,
+        functions: 96,
+        lines: 95,
       },
     },
   },
