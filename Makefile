@@ -48,7 +48,11 @@ changelog:
 release:
 	@$(RELEASE) release "$(CURRENT)" "$(NEXT)"
 
+# Pushes the most recent release (whatever `make release` last created).
+# Does NOT depend on `release` — that's a separate, deliberate step.
 .PHONY: release-push
-release-push: release
+release-push:
+	@git rev-parse -q --verify "refs/tags/v$(CURRENT)" >/dev/null \
+	  || { echo "no local tag v$(CURRENT); run 'make release' first"; exit 1; }
 	git push origin main
-	git push origin "v$(NEXT)"
+	git push origin "v$(CURRENT)"
