@@ -15,7 +15,8 @@
     "prepublishOnly": "npm run build",
     "auth": "node dist/cli.js auth",
     "serve": "node dist/cli.js serve",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "engines": {
     "node": ">=18"
@@ -51,6 +52,7 @@
   "devDependencies": {
     "@types/node": "20.19.33",
     "@types/ws": "8.5.14",
+    "@vitest/coverage-v8": "^4.1.5",
     "msw": "^2.12.10",
     "tsup": "8.5.1",
     "typescript": "5.9.3",
