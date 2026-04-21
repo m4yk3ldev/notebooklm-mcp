@@ -220,7 +220,7 @@ export const BATCHEXECUTE_PATH = "/_/LabsTailwindUi/data/batchexecute";
 export const QUERY_PATH =
   "/_/LabsTailwindUi/data/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateFreeFormStreamed";
 
-export const DEFAULT_BL = "boq_labs-tailwind-frontend_20260218.06_p0";
+export const DEFAULT_BL = "boq_labs-tailwind-frontend_20260419.02_p0";
 
 export const REQUIRED_COOKIES = [
   "SID",

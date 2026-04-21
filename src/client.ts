@@ -169,15 +169,18 @@ export class NotebookLMClient {
 
         if (item.length < 3) continue;
         if (item[0] === "wrb.fr" && item[1] === rpcId) {
-          // Check for auth error (code 16)
-          if (
-            item.length > 6 &&
-            item[6] === "generic" &&
-            Array.isArray(item[5]) &&
-            item[5].includes(16)
-          ) {
-            throw new AuthenticationError(
-              "Authentication expired. Run `npx @m4ykeldev/notebooklm-mcp auth` to re-authenticate.",
+          // item[5] holds the error code array when the call fails. null/absent = success.
+          // Auth errors (code 16) trigger token refresh; any other non-empty error code
+          // is a real server-side failure and must not be silently swallowed.
+          const errorCodes = Array.isArray(item[5]) ? (item[5] as unknown[]) : null;
+          if (errorCodes && errorCodes.length > 0) {
+            if (errorCodes.includes(16)) {
+              throw new AuthenticationError(
+                "Authentication expired. Run `npx @m4ykeldev/notebooklm-mcp auth` to re-authenticate.",
+              );
+            }
+            throw new Error(
+              `NotebookLM RPC ${rpcId} failed with error code(s) ${JSON.stringify(errorCodes)}`,
             );
           }
 
@@ -652,9 +655,12 @@ export class NotebookLMClient {
   }
 
   async deleteSource(sourceId: string, notebookId: string): Promise<void> {
+    // Wire format: [[[sourceId]], [2]] — array of source-id wrappers, plus project-context tag.
+    // The notebook ID goes in the source-path URL param (already handled by execute()),
+    // not in the payload. Passing the notebook ID in the payload yields INVALID_ARGUMENT.
     await this.execute(
       RPC_IDS.DELETE_SOURCE,
-      [sourceId, notebookId],
+      [[[sourceId]], [2]],
       `/notebook/${notebookId}`,
     );
   }
