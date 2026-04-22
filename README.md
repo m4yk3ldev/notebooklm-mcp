@@ -27,11 +27,13 @@ Manage notebooks, ingest diverse sources, trigger deep research, and generate st
 ### 1. Installation
 
 Run it instantly with `npx`:
+
 ```bash
 npx -y @m4ykeldev/notebooklm-mcp serve
 ```
 
 Or install globally for better performance:
+
 ```bash
 npm install -g @m4ykeldev/notebooklm-mcp
 ```
@@ -43,13 +45,15 @@ Say goodbye to manual cookie hunting. Our smart auth flow does the heavy lifting
 ```bash
 notebooklm-mcp auth
 ```
-*A secure Chrome window will open. Simply log into your Google account, and we'll handle the rest. Your session is stored locally and securely.*
+
+_A secure Chrome window will open. Simply log into your Google account, and we'll handle the rest. Your session is stored locally and securely._
 
 ---
 
 ## 🤖 AI Assistant Integration
 
 ### Claude Desktop / Claude Code
+
 Add the following to your `mcpServers` configuration:
 
 ```json
@@ -64,6 +68,7 @@ Add the following to your `mcpServers` configuration:
 ```
 
 ### Cursor / VS Code (Composer)
+
 1. Navigate to **MCP Settings**.
 2. Add a new server named `NotebookLM`.
 3. Set type to `command` and enter: `npx -y @m4ykeldev/notebooklm-mcp serve`.
@@ -75,56 +80,61 @@ Add the following to your `mcpServers` configuration:
 Every tool is designed to work seamlessly within your AI's context window.
 
 ### 📔 Notebook Management
-| Tool | Description |
-| :--- | :--- |
-| `notebook_list` | Get an overview of all your notebooks, including titles, source counts, and ownership metadata. |
-| `notebook_create` | Create a new NotebookLM project instantly from your terminal or AI assistant. |
-| `notebook_get` | Retrieve deep metadata and a full list of sources for a specific notebook. |
-| `notebook_describe` | Get a high-level, AI-generated summary of everything inside a notebook. |
-| `notebook_rename` | Update the title of an existing notebook. |
-| `notebook_delete` | Permanently remove a notebook (requires explicit confirmation). |
+
+| Tool                | Description                                                                                     |
+| :------------------ | :---------------------------------------------------------------------------------------------- |
+| `notebook_list`     | Get an overview of all your notebooks, including titles, source counts, and ownership metadata. |
+| `notebook_create`   | Create a new NotebookLM project instantly from your terminal or AI assistant.                   |
+| `notebook_get`      | Retrieve deep metadata and a full list of sources for a specific notebook.                      |
+| `notebook_describe` | Get a high-level, AI-generated summary of everything inside a notebook.                         |
+| `notebook_rename`   | Update the title of an existing notebook.                                                       |
+| `notebook_delete`   | Permanently remove a notebook (requires explicit confirmation).                                 |
 
 ### 📄 Source Ingestion & Management
-| Tool | Description |
-| :--- | :--- |
-| `notebook_add_url` | Add any website or YouTube video as a source. Transcripts are automatically handled. |
-| `notebook_add_text` | Ingest raw text snippets or local file contents directly into your project. |
-| `notebook_add_drive` | Connect and import documents, sheets, or slides from your Google Drive. |
-| `source_describe` | Get detailed AI analysis, summaries, and key topics for any individual source. |
-| `source_get_content` | Extract the full underlying text of a source for processing by other AI tools. |
-| `source_list_drive` | List all Drive-based sources and check if they are up-to-date with the original files. |
-| `source_sync_drive` | Sync selected Google Drive sources to pull the latest changes into NotebookLM. |
-| `source_delete` | Remove a specific source from your notebook. |
+
+| Tool                 | Description                                                                            |
+| :------------------- | :------------------------------------------------------------------------------------- |
+| `notebook_add_url`   | Add any website or YouTube video as a source. Transcripts are automatically handled.   |
+| `notebook_add_text`  | Ingest raw text snippets or local file contents directly into your project.            |
+| `notebook_add_drive` | Connect and import documents, sheets, or slides from your Google Drive.                |
+| `source_describe`    | Get detailed AI analysis, summaries, and key topics for any individual source.         |
+| `source_get_content` | Extract the full underlying text of a source for processing by other AI tools.         |
+| `source_list_drive`  | List all Drive-based sources and check if they are up-to-date with the original files. |
+| `source_sync_drive`  | Sync selected Google Drive sources to pull the latest changes into NotebookLM.         |
+| `source_delete`      | Remove a specific source from your notebook.                                           |
 
 ### 🔬 Research & Deep Analysis
-| Tool | Description |
-| :--- | :--- |
-| `research_start` | Launch an autonomous research task using Google's engine (Web or Drive sources). |
-| `research_status` | Track the progress of active research tasks and view discovered insights. |
-| `research_import` | Instantly import the findings of a research task as new sources in your notebook. |
-| `notebook_query` | Ask complex, grounded questions. Answers are cited directly from your sources. |
-| `chat_configure` | Fine-tune your AI's behavior by setting specific goals or preferred response lengths. |
+
+| Tool              | Description                                                                           |
+| :---------------- | :------------------------------------------------------------------------------------ |
+| `research_start`  | Launch an autonomous research task using Google's engine (Web or Drive sources).      |
+| `research_status` | Track the progress of active research tasks and view discovered insights.             |
+| `research_import` | Instantly import the findings of a research task as new sources in your notebook.     |
+| `notebook_query`  | Ask complex, grounded questions. Answers are cited directly from your sources.        |
+| `chat_configure`  | Fine-tune your AI's behavior by setting specific goals or preferred response lengths. |
 
 ### 🎬 Studio (AI Content Generation)
-| Tool | Description |
-| :--- | :--- |
-| `audio_overview_create` | Transform your notebook's sources into a professional, podcast-style audio discussion. |
-| `video_overview_create` | Generate a structured video explainer based on your project data. |
-| `report_create` | Create professional Briefing Docs, Study Guides, or Blog Posts tailored to your sources. |
-| `slide_deck_create` | Turn your research into a presenter-ready slide deck automatically. |
-| `infographic_create` | Visualize complex data and relationships with an AI-generated infographic. |
-| `flashcards_create` | Generate interactive study flashcards to master your notebook's content. |
-| `quiz_create` | Create a comprehensive quiz to test knowledge grounded in your provided sources. |
-| `data_table_create` | Extract and organize information into a structured, downloadable data table. |
-| `mind_map_create` | Build a visual mind map connecting the core concepts of your notebook. |
-| `studio_status` | Check the generation status of your Studio artifacts and get download links. |
-| `studio_delete` | Clean up your workspace by deleting old Studio artifacts. |
+
+| Tool                    | Description                                                                              |
+| :---------------------- | :--------------------------------------------------------------------------------------- |
+| `audio_overview_create` | Transform your notebook's sources into a professional, podcast-style audio discussion.   |
+| `video_overview_create` | Generate a structured video explainer based on your project data.                        |
+| `report_create`         | Create professional Briefing Docs, Study Guides, or Blog Posts tailored to your sources. |
+| `slide_deck_create`     | Turn your research into a presenter-ready slide deck automatically.                      |
+| `infographic_create`    | Visualize complex data and relationships with an AI-generated infographic.               |
+| `flashcards_create`     | Generate interactive study flashcards to master your notebook's content.                 |
+| `quiz_create`           | Create a comprehensive quiz to test knowledge grounded in your provided sources.         |
+| `data_table_create`     | Extract and organize information into a structured, downloadable data table.             |
+| `mind_map_create`       | Build a visual mind map connecting the core concepts of your notebook.                   |
+| `studio_status`         | Check the generation status of your Studio artifacts and get download links.             |
+| `studio_delete`         | Clean up your workspace by deleting old Studio artifacts.                                |
 
 ### 🔑 Authentication Helpers
-| Tool | Description |
-| :--- | :--- |
-| `refresh_auth` | Manually trigger a session refresh if you encounter connection issues. |
-| `save_auth_tokens` | Manually save cookie data (legacy fallback method). |
+
+| Tool               | Description                                                            |
+| :----------------- | :--------------------------------------------------------------------- |
+| `refresh_auth`     | Manually trigger a session refresh if you encounter connection issues. |
+| `save_auth_tokens` | Manually save cookie data (legacy fallback method).                    |
 
 ---
 
@@ -146,4 +156,5 @@ Every tool is designed to work seamlessly within your AI's context window.
 Open-source and available under the [MIT License](LICENSE).
 
 ---
+
 Crafted with precision for the AI-first developer. Part of the [Model Context Protocol](https://modelcontextprotocol.io) ecosystem.
