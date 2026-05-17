@@ -52,6 +52,45 @@ export class AuthenticationError extends Error {
   }
 }
 
+/**
+ * Read response.text() but abort if the AbortSignal fires. fetch()'s
+ * built-in abort cancels the HTTP request setup but body streaming can
+ * still hang after headers arrive, leaving the caller stuck past the
+ * configured timeout.
+ */
+async function readBodyWithAbort(
+  response: Response,
+  signal: AbortSignal,
+): Promise<string> {
+  if (signal.aborted) {
+    throw new Error("Aborted before body read");
+  }
+  return new Promise<string>((resolve, reject) => {
+    let settled = false;
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener("abort", onAbort);
+      reject(new Error("Body read aborted due to timeout"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    response.text().then(
+      (text) => {
+        if (settled) return;
+        settled = true;
+        signal.removeEventListener("abort", onAbort);
+        resolve(text);
+      },
+      (err) => {
+        if (settled) return;
+        settled = true;
+        signal.removeEventListener("abort", onAbort);
+        reject(err);
+      },
+    );
+  });
+}
+
 export class NotebookLMClient {
   private tokens: AuthTokens;
   private csrfToken: string;
@@ -142,16 +181,22 @@ export class NotebookLMClient {
         if (i < lines.length) {
           try {
             results.push(JSON.parse(lines[i]));
-          } catch {
-            // skip unparseable
+          } catch (e) {
+            // Drop the chunk but log: silent skips here used to hide
+            // upstream API shape drift entirely.
+            console.warn(
+              `parseResponse: skipping unparseable framed chunk (${(e as Error).message}); first 80 chars: ${lines[i].slice(0, 80)}`,
+            );
           }
           i++;
         }
       } else {
         try {
           results.push(JSON.parse(line));
-        } catch {
-          // skip
+        } catch (e) {
+          console.warn(
+            `parseResponse: skipping unparseable line (${(e as Error).message}); first 80 chars: ${line.slice(0, 80)}`,
+          );
         }
         i++;
       }
@@ -243,6 +288,15 @@ export class NotebookLMClient {
         signal: controller.signal,
       });
 
+      // Surface transport-level failures before we attempt to parse — a
+      // 502/503 from Google's edge previously slipped through and got
+      // treated as "RPC returned empty result".
+      if (!response.ok) {
+        throw new Error(
+          `NotebookLM RPC ${rpcId} returned HTTP ${response.status} ${response.statusText}`,
+        );
+      }
+
       // Update cookies from Set-Cookie headers
       const setCookies = (response.headers as any).getSetCookie?.() || [];
       if (setCookies.length > 0) {
@@ -255,7 +309,10 @@ export class NotebookLMClient {
         saveTokens(this.tokens);
       }
 
-      const text = await response.text();
+      // The AbortController only aborts the fetch itself; response.text()
+      // can still hang on a slow body. Race the text read against the
+      // same signal so the overall timeout actually bounds wall-clock.
+      const text = await readBodyWithAbort(response, controller.signal);
       const parsed = this.parseResponse(text);
 
       try {
@@ -659,7 +716,13 @@ export class NotebookLMClient {
       );
       const data = result as any[];
       return data?.[0] === true;
-    } catch {
+    } catch (e) {
+      // Auth errors must surface so the caller can refresh and retry —
+      // don't collapse them into "not fresh".
+      if (e instanceof AuthenticationError) throw e;
+      console.warn(
+        `checkFreshness(${sourceId}) failed: ${(e as Error).message}`,
+      );
       return null;
     }
   }
@@ -756,6 +819,12 @@ export class NotebookLMClient {
         signal: controller.signal,
       });
 
+      if (!response.ok) {
+        throw new Error(
+          `NotebookLM query returned HTTP ${response.status} ${response.statusText}`,
+        );
+      }
+
       // Update cookies from Set-Cookie headers
       const setCookies = (response.headers as any).getSetCookie?.() || [];
       if (setCookies.length > 0) {
@@ -768,7 +837,7 @@ export class NotebookLMClient {
         saveTokens(this.tokens);
       }
 
-      const text = await response.text();
+      const text = await readBodyWithAbort(response, controller.signal);
       const parsed = this.parseResponse(text);
 
       let bestAnswer = "";

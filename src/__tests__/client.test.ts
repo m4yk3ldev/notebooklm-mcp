@@ -165,6 +165,46 @@ describe("NotebookLMClient", () => {
     expect(refreshCookiesHeadless).toHaveBeenCalled();
   });
 
+  it("surfaces HTTP 5xx from batchexecute as an error (no silent swallow)", async () => {
+    server.use(
+      http.post(`${BASE_URL}${BATCHEXECUTE_PATH}`, () =>
+        HttpResponse.text("upstream blew up", { status: 503, statusText: "Service Unavailable" }),
+      ),
+    );
+    const client = new NotebookLMClient(mockTokens);
+    await expect(client.listNotebooks()).rejects.toThrow(/HTTP 503 Service Unavailable/);
+  });
+
+  it("checkFreshness rethrows AuthenticationError instead of returning null", async () => {
+    let calls = 0;
+    server.use(
+      http.post(`${BASE_URL}${BATCHEXECUTE_PATH}`, ({ request }) => {
+        calls++;
+        const url = new URL(request.url);
+        if (url.searchParams.get("rpcids") === RPC_IDS.CHECK_FRESHNESS) {
+          // Every call returns auth-error so the refresh path is engaged
+          // and checkFreshness should not silently return null.
+          const bundle = ["wrb.fr", RPC_IDS.CHECK_FRESHNESS, null, null, null, [16], "generic"];
+          const json = JSON.stringify([bundle]);
+          return HttpResponse.text(`)]}'\n\n${json.length}\n${json}`);
+        }
+        return HttpResponse.text("<html>CSRF</html>");
+      }),
+      http.get(`${BASE_URL}`, () => HttpResponse.text("<html>CSRF</html>")),
+    );
+    (refreshCookiesHeadless as any).mockRejectedValue(new Error("refresh broken"));
+    // Stub stderr writes from the browser-auth fallback path to keep test output clean.
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const client = new NotebookLMClient(mockTokens);
+    // The auth-refresh path will eventually throw the original AuthenticationError;
+    // we expect checkFreshness to rethrow it rather than swallow.
+    await expect(client.checkFreshness("src-1", "nb-1")).rejects.toThrow(
+      /Authentication expired/,
+    );
+    expect(calls).toBeGreaterThan(0);
+  });
+
   it("shares one refresh across concurrent failing requests (mutex)", async () => {
     let listCalls = 0;
 
