@@ -33,9 +33,16 @@ jobs:
       - name: Install gitleaks
         env:
           GITLEAKS_VERSION: 8.30.1
+          # SHA-256 of gitleaks_8.30.1_linux_x64.tar.gz from upstream
+          # checksums.txt. Bump together with GITLEAKS_VERSION.
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
         run: |
-          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
-            | tar -xz gitleaks
+          set -euo pipefail
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSLo "$tarball" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${tarball}"
+          echo "${GITLEAKS_SHA256}  ${tarball}" | sha256sum -c -
+          tar -xzf "$tarball" gitleaks
           sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
           gitleaks version
 
@@ -78,6 +85,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
       - uses: actions/setup-node@v6
         with:
           # npm >= 9.5 still required on PATH for `npm audit signatures`
@@ -96,6 +105,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
@@ -116,6 +127,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
       # Do NOT pass registry-url: setup-node would write an
       # .npmrc with _authToken=${NODE_AUTH_TOKEN}, and a stale
       # NPM_TOKEN secret would sabotage OIDC. publishConfig.registry

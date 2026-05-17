@@ -83,9 +83,11 @@ ok
 # pnpm-lock.yaml omits `tarball:` when the resolved URL matches the default
 # registry; any explicit tarball line is an off-registry pull and must be
 # whitelisted (registry.npmjs.org) or rejected.
+# Note: patterns use [[:space:]] (POSIX) not \s (GNU extension) so the gate
+# works under BSD grep on macOS as well as GNU grep on Linux/CI.
 step 7 "pnpm-lock.yaml registry pinning"
-BAD_TARBALL=$(grep -nE '^\s*tarball:' pnpm-lock.yaml | grep -vE 'registry\.npmjs\.org' || true)
-BAD_GIT=$(grep -nE '^\s*resolution:.*(git\+|github:)' pnpm-lock.yaml || true)
+BAD_TARBALL=$(grep -nE '^[[:space:]]*tarball:' pnpm-lock.yaml | grep -vE 'registry\.npmjs\.org' || true)
+BAD_GIT=$(grep -nE '^[[:space:]]*resolution:.*(git\+|github:|git@|ssh://)' pnpm-lock.yaml || true)
 if [[ -n "$BAD_TARBALL" || -n "$BAD_GIT" ]]; then
   [[ -n "$BAD_TARBALL" ]] && { echo "off-registry tarball URLs:"; echo "$BAD_TARBALL"; }
   [[ -n "$BAD_GIT" ]] && { echo "git/github resolutions:"; echo "$BAD_GIT"; }
