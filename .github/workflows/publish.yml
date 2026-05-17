@@ -2,16 +2,94 @@ name: Build & Publish
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
     tags:
       - 'v*'
   pull_request:
-    branches: [ main ]
+    branches: [main]
+
+# Default to read-only. Each job escalates only what it needs.
+permissions:
+  contents: read
+
+# Kill superseded runs on the same ref.
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: 8.30.1
+        run: |
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Run gitleaks (incremental)
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_SHA: ${{ github.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          ZERO_SHA="0000000000000000000000000000000000000000"
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            LOG_OPTS="${PR_BASE_SHA}..${PR_HEAD_SHA}"
+          elif [ -n "$PUSH_BEFORE" ] && [ "$PUSH_BEFORE" != "$ZERO_SHA" ]; then
+            LOG_OPTS="${PUSH_BEFORE}..${PUSH_SHA}"
+          else
+            LOG_OPTS="-1 HEAD"
+          fi
+          echo "Scanning range: $LOG_OPTS"
+          gitleaks detect --source=. --no-banner --redact --verbose --exit-code 1 --log-opts="$LOG_OPTS"
+
+  osv-scan:
+    name: Dependency audit (osv-scanner)
+    runs-on: ubuntu-latest
+    needs: [secret-scan]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: google/osv-scanner-action/osv-scanner-action@v2.2.4
+        with:
+          scan-args: |-
+            --lockfile=package-lock.json
+
+  audit:
+    name: Supply-chain audit (npm)
+    runs-on: ubuntu-latest
+    needs: [osv-scan]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          # npm >= 9.5 for `npm audit signatures`. Node 22 ships npm 10.
+          node-version: '22'
+      - run: ./scripts/pre-release.sh
+        env:
+          CI: 'true'
+
   test:
     name: Run Tests
     runs-on: ubuntu-latest
+    needs: [audit]
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -23,9 +101,10 @@ jobs:
 
   publish:
     name: Publish to NPM
-    needs: test
+    needs: [test]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       id-token: write
       contents: write
