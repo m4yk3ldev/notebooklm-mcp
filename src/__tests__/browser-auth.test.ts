@@ -181,6 +181,32 @@ describe("launchChrome", () => {
     const b = await launchChrome(false);
     expect(a.port).not.toBe(b.port);
   });
+
+  it("rejects (and kills child) when Chrome never prints the DevTools URL", async () => {
+    setPlatform("linux");
+    hoisted.execSyncMock.mockImplementationOnce(() => Buffer.from("Chrome 120"));
+    // Stderr that never emits the DevTools line.
+    const killSpy = vi.fn();
+    const silentStderr = {
+      on(_event: string, _cb: (arg: any) => void) {
+        return silentStderr;
+      },
+      off() {},
+    };
+    hoisted.spawnMock.mockReturnValueOnce({
+      stderr: silentStderr,
+      unref: vi.fn(),
+      kill: killSpy,
+      on: vi.fn(),
+    });
+    // Real timeout is 10s; jump time forward to settle fast.
+    vi.useFakeTimers();
+    const promise = launchChrome(false);
+    vi.advanceTimersByTime(11_000);
+    await expect(promise).rejects.toThrow(/Timed out.*DevTools URL/);
+    expect(killSpy).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
 });
 
 function mockDebuggerUrl(body?: unknown) {
