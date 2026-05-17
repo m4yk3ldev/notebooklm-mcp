@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] - 2026-05-17
+
+### Added
+- gate release-push on pre-release audit
+- add pre-release supply-chain audit script
+
+### Fixed
+- address Qodo review (3 bugs)
+- pin patched transitive versions via pnpm.overrides
+- guard ANSI colors on non-TTY output
+
+### Changed
+- migrate npm → pnpm across audit script, CI, docs
+
+### Documentation
+- document pre-release audit and release flow
+- pre-release supply-chain audit plan
+- enhance README with installation instructions and tool descriptions
+
+### Chores
+- pin all dev deps and pnpm overrides to exact versions
+- harden publish workflow with secret-scan, osv, supply-chain audit chain
+
 ## [0.2.3] - 2026-04-21
 
 ## [0.2.2] - 2026-04-21
