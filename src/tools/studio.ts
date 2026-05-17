@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { McpTool, pendingConfirmation } from "./index.js";
+import { McpTool, pendingConfirmation, resolveSourceIds } from "./index.js";
 import {
   AUDIO_FORMATS,
   AUDIO_LENGTHS,
@@ -29,7 +29,7 @@ export const studioTools: McpTool<any>[] = [
     },
     execute: async (client, { notebook_id, source_ids, format, length, language, focus_prompt, confirm }) => {
       if (!confirm) return pendingConfirmation("Set confirm=true to generate audio overview.");
-      const ids = source_ids || (await client.getNotebook(notebook_id)).sources.map((s) => s.id);
+      const ids = await resolveSourceIds(client, notebook_id, source_ids);
       const artifactId = await client.createAudioOverview(notebook_id, ids, { format, length, language, focus_prompt });
       return { artifact_id: artifactId, message: "Audio generation started. Use studio_status to check progress." };
     },
@@ -48,7 +48,7 @@ export const studioTools: McpTool<any>[] = [
     },
     execute: async (client, { notebook_id, source_ids, format, visual_style, language, focus_prompt, confirm }) => {
       if (!confirm) return pendingConfirmation("Set confirm=true to generate video overview.");
-      const ids = source_ids || (await client.getNotebook(notebook_id)).sources.map((s) => s.id);
+      const ids = await resolveSourceIds(client, notebook_id, source_ids);
       const artifactId = await client.createVideoOverview(notebook_id, ids, { format, visual_style, language, focus_prompt });
       return { artifact_id: artifactId, message: "Video generation started. Use studio_status to check progress." };
     },
@@ -67,7 +67,7 @@ export const studioTools: McpTool<any>[] = [
     },
     execute: async (client, { notebook_id, source_ids, orientation, detail_level, language, focus_prompt, confirm }) => {
       if (!confirm) return pendingConfirmation("Set confirm=true to generate infographic.");
-      const ids = source_ids || (await client.getNotebook(notebook_id)).sources.map((s) => s.id);
+      const ids = await resolveSourceIds(client, notebook_id, source_ids);
       const artifactId = await client.createInfographic(notebook_id, ids, { orientation, detail_level, language, focus_prompt });
       return { artifact_id: artifactId, message: "Infographic generation started. Use studio_status to check progress." };
     },
@@ -86,7 +86,7 @@ export const studioTools: McpTool<any>[] = [
     },
     execute: async (client, { notebook_id, source_ids, format, length, language, focus_prompt, confirm }) => {
       if (!confirm) return pendingConfirmation("Set confirm=true to generate slide deck.");
-      const ids = source_ids || (await client.getNotebook(notebook_id)).sources.map((s) => s.id);
+      const ids = await resolveSourceIds(client, notebook_id, source_ids);
       const artifactId = await client.createSlideDeck(notebook_id, ids, { format, length, language, focus_prompt });
       return { artifact_id: artifactId, message: "Slide deck generation started. Use studio_status to check progress." };
     },
@@ -104,7 +104,7 @@ export const studioTools: McpTool<any>[] = [
     },
     execute: async (client, { notebook_id, source_ids, report_format, custom_prompt, language, confirm }) => {
       if (!confirm) return pendingConfirmation("Set confirm=true to generate report.");
-      const ids = source_ids || (await client.getNotebook(notebook_id)).sources.map((s) => s.id);
+      const ids = await resolveSourceIds(client, notebook_id, source_ids);
       const artifactId = await client.createReport(notebook_id, ids, { report_format, custom_prompt, language });
       return { artifact_id: artifactId, message: "Report generation started. Use studio_status to check progress." };
     },
@@ -120,7 +120,7 @@ export const studioTools: McpTool<any>[] = [
     },
     execute: async (client, { notebook_id, source_ids, difficulty, confirm }) => {
       if (!confirm) return pendingConfirmation("Set confirm=true to generate flashcards.");
-      const ids = source_ids || (await client.getNotebook(notebook_id)).sources.map((s) => s.id);
+      const ids = await resolveSourceIds(client, notebook_id, source_ids);
       const artifactId = await client.createFlashcards(notebook_id, ids, difficulty);
       return { artifact_id: artifactId, message: "Flashcards generation started. Use studio_status to check progress." };
     },
@@ -137,7 +137,7 @@ export const studioTools: McpTool<any>[] = [
     },
     execute: async (client, { notebook_id, source_ids, question_count, difficulty, confirm }) => {
       if (!confirm) return pendingConfirmation("Set confirm=true to generate quiz.");
-      const ids = source_ids || (await client.getNotebook(notebook_id)).sources.map((s) => s.id);
+      const ids = await resolveSourceIds(client, notebook_id, source_ids);
       const artifactId = await client.createQuiz(notebook_id, ids, question_count, difficulty);
       return { artifact_id: artifactId, message: "Quiz generation started. Use studio_status to check progress." };
     },
@@ -154,7 +154,7 @@ export const studioTools: McpTool<any>[] = [
     },
     execute: async (client, { notebook_id, description, source_ids, language, confirm }) => {
       if (!confirm) return pendingConfirmation("Set confirm=true to generate data table.");
-      const ids = source_ids || (await client.getNotebook(notebook_id)).sources.map((s) => s.id);
+      const ids = await resolveSourceIds(client, notebook_id, source_ids);
       const artifactId = await client.createDataTable(notebook_id, ids, description, language);
       return { artifact_id: artifactId, message: "Data table generation started. Use studio_status to check progress." };
     },
@@ -170,7 +170,7 @@ export const studioTools: McpTool<any>[] = [
     },
     execute: async (client, { notebook_id, source_ids, title, confirm }) => {
       if (!confirm) return pendingConfirmation("Set confirm=true to generate mind map.");
-      const ids = source_ids || (await client.getNotebook(notebook_id)).sources.map((s) => s.id);
+      const ids = await resolveSourceIds(client, notebook_id, source_ids);
       const artifactId = await client.createMindMap(notebook_id, ids, title);
       return { artifact_id: artifactId, message: "Mind map generation started. Use studio_status to check progress." };
     },

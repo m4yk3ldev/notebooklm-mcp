@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { McpTool } from "./index.js";
+import { McpTool, clientResetSignal } from "./index.js";
 import { saveTokens } from "../auth.js";
 import type { AuthTokens } from "../types.js";
 
@@ -38,12 +38,10 @@ export const authTools: McpTool<any>[] = [
         extracted_at: Date.now() / 1000,
       };
       saveTokens(tokens);
-      
-      // We return this special flag so the registerTools wrapper or server.ts can catch it
-      return { 
+
+      return clientResetSignal({
         message: "Tokens saved. Client will use new tokens on next request.",
-        _client_action: "reset" 
-      };
+      });
     },
   },
 ];
