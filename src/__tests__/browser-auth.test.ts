@@ -72,16 +72,38 @@ import {
 const fetchMock = vi.fn();
 const originalFetch = globalThis.fetch;
 
+// Helper: build a fake ChildProcess whose stderr immediately emits the
+// DevTools "listening on" line so launchChrome's port discovery resolves
+// without waiting on a real Chrome.
+function fakeChromeProcess(port = 51234) {
+  const listeners: Record<string, Array<(arg: any) => void>> = {};
+  const stderr = {
+    on(event: string, cb: (arg: any) => void) {
+      (listeners[event] ||= []).push(cb);
+      // Defer the emit one tick so the caller has time to attach listeners.
+      if (event === "data") {
+        setTimeout(() => {
+          cb(Buffer.from(`DevTools listening on ws://127.0.0.1:${port}/devtools/browser/abc\n`));
+        }, 0);
+      }
+      return stderr;
+    },
+    off() {},
+  };
+  return {
+    stderr,
+    unref: vi.fn(),
+    kill: vi.fn(),
+    on: vi.fn(),
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   hoisted.FakeWebSocket.instances.length = 0;
   hoisted.validateCookiesMock.mockReturnValue(true);
   hoisted.execSyncMock.mockImplementation(() => Buffer.from(""));
-  hoisted.spawnMock.mockReturnValue({
-    unref: vi.fn(),
-    kill: vi.fn(),
-    on: vi.fn(),
-  });
+  hoisted.spawnMock.mockReturnValue(fakeChromeProcess());
   globalThis.fetch = fetchMock as any;
 });
 afterEach(() => {
@@ -127,14 +149,19 @@ describe("launchChrome", () => {
     await expect(launchChrome(false)).rejects.toThrow(/Could not find Google Chrome/);
   });
 
-  it("spawns Chrome with required flags (headed)", async () => {
+  it("spawns Chrome with port 0 (OS-assigned) + loopback bind + headed", async () => {
     setPlatform("linux");
     hoisted.execSyncMock.mockImplementationOnce(() => Buffer.from("Chrome 120"));
-    await launchChrome(false);
+    const { port } = await launchChrome(false);
     expect(hoisted.spawnMock).toHaveBeenCalledOnce();
-    const [, args] = hoisted.spawnMock.mock.calls[0];
-    expect(args).toContain("--remote-debugging-port=9229");
+    const [, args, opts] = hoisted.spawnMock.mock.calls[0];
+    expect(args).toContain("--remote-debugging-port=0");
+    expect(args).toContain("--remote-debugging-address=127.0.0.1");
     expect(args).not.toContain("--headless=new");
+    // stdio must pipe stderr so port discovery can read it.
+    expect(opts.stdio).toEqual(["ignore", "ignore", "pipe"]);
+    // Port is whatever the fake stderr printed (default 51234).
+    expect(port).toBe(51234);
   });
 
   it("spawns Chrome with --headless=new when requested", async () => {
@@ -143,6 +170,16 @@ describe("launchChrome", () => {
     await launchChrome(true);
     const [, args] = hoisted.spawnMock.mock.calls[0];
     expect(args).toContain("--headless=new");
+  });
+
+  it("returns different ports across runs (no fixed port collision)", async () => {
+    setPlatform("linux");
+    hoisted.execSyncMock.mockImplementation(() => Buffer.from("Chrome 120"));
+    hoisted.spawnMock.mockReturnValueOnce(fakeChromeProcess(40001));
+    hoisted.spawnMock.mockReturnValueOnce(fakeChromeProcess(40002));
+    const a = await launchChrome(false);
+    const b = await launchChrome(false);
+    expect(a.port).not.toBe(b.port);
   });
 });
 
