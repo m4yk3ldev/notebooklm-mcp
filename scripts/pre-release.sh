@@ -14,11 +14,15 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-GREEN='\033[0;32m'
-RED='\033[0;31m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-NC='\033[0m'
+if [[ -t 1 ]]; then
+  GREEN='\033[0;32m'
+  RED='\033[0;31m'
+  YELLOW='\033[1;33m'
+  CYAN='\033[0;36m'
+  NC='\033[0m'
+else
+  GREEN='' RED='' YELLOW='' CYAN='' NC=''
+fi
 
 step() { printf "${CYAN}[%s/%s] %s${NC}\n" "$1" "$TOTAL" "$2"; }
 ok()   { printf "${GREEN}    ok${NC}\n\n"; }
