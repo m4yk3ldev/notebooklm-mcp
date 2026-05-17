@@ -10,11 +10,6 @@ import type {
 } from "./types.js";
 import {
   RPC_IDS,
-  BASE_URL,
-  BATCHEXECUTE_PATH,
-  QUERY_PATH,
-  DEFAULT_BL,
-  USER_AGENT,
   DEFAULT_TIMEOUT,
   EXTENDED_TIMEOUT,
   OWNERSHIP_MINE,
@@ -38,12 +33,12 @@ import {
   CHAT_RESPONSE_LENGTHS,
 } from "./constants.js";
 import {
-  buildCookieHeader,
   extractCsrfFromPage,
   extractSessionIdFromPage,
-  saveTokens,
 } from "./auth.js";
-import { refreshCookiesHeadless, runBrowserAuthFlow } from "./browser-auth.js";
+import { AuthState } from "./rpc/auth-state.js";
+import { RpcTransport } from "./rpc/transport.js";
+import { extractTextFromBlocks as extractWireText } from "./rpc/wire.js";
 
 export class AuthenticationError extends Error {
   constructor(message: string) {
@@ -52,160 +47,21 @@ export class AuthenticationError extends Error {
   }
 }
 
-/**
- * Read response.text() but abort if the AbortSignal fires. fetch()'s
- * built-in abort cancels the HTTP request setup but body streaming can
- * still hang after headers arrive, leaving the caller stuck past the
- * configured timeout.
- */
-async function readBodyWithAbort(
-  response: Response,
-  signal: AbortSignal,
-): Promise<string> {
-  if (signal.aborted) {
-    throw new Error("Aborted before body read");
-  }
-  return new Promise<string>((resolve, reject) => {
-    let settled = false;
-    const onAbort = () => {
-      if (settled) return;
-      settled = true;
-      signal.removeEventListener("abort", onAbort);
-      reject(new Error("Body read aborted due to timeout"));
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
-    response.text().then(
-      (text) => {
-        if (settled) return;
-        settled = true;
-        signal.removeEventListener("abort", onAbort);
-        resolve(text);
-      },
-      (err) => {
-        if (settled) return;
-        settled = true;
-        signal.removeEventListener("abort", onAbort);
-        reject(err);
-      },
-    );
-  });
-}
-
 export class NotebookLMClient {
-  private tokens: AuthTokens;
-  private csrfToken: string;
-  private sessionId: string;
+  private auth: AuthState;
+  private transport: RpcTransport;
   private conversationHistory: Map<string, unknown[]> = new Map();
   private queryTimeout: number;
-  private reqId = 0;
-  // Shared in-flight auth-refresh promise. When several concurrent RPCs
-  // all hit AuthenticationError, only the first one spawns a headless
-  // Chrome / manual browser flow; the rest await the same result. Without
-  // this guard, every concurrent caller would launch its own browser and
-  // race to overwrite this.tokens with potentially different cookie sets.
-  private authRefreshPromise: Promise<AuthTokens> | null = null;
 
-  constructor(tokens: AuthTokens, queryTimeout?: number) {
-    this.tokens = tokens;
-    this.csrfToken = tokens.csrf_token;
-    this.sessionId = tokens.session_id;
-    this.queryTimeout = queryTimeout ?? EXTENDED_TIMEOUT;
+  constructor(tokens: AuthTokens, queryTimeout: number = EXTENDED_TIMEOUT) {
+    this.auth = new AuthState(tokens);
+    this.transport = new RpcTransport(this.auth, queryTimeout);
+    this.queryTimeout = queryTimeout;
   }
 
   // ─── Core HTTP/RPC ───────────────────────────────────
 
-  private buildRequestBody(rpcId: string, params: unknown): string {
-    const fReq = JSON.stringify([[[rpcId, JSON.stringify(params), null, "generic"]]]);
-    const parts = [];
-    if (this.csrfToken) {
-      parts.push(`at=${encodeURIComponent(this.csrfToken)}`);
-    }
-    if (this.sessionId) {
-      parts.push(`f.sid=${encodeURIComponent(this.sessionId)}`);
-    }
-    parts.push(`f.req=${encodeURIComponent(fReq)}`);
-    return parts.join("&");
-  }
-
-  private buildUrl(rpcId: string, sourcePath = "/"): string {
-    this.reqId++;
-    const params: Record<string, string> = {
-      rpcids: rpcId,
-      bl: this.tokens.bl || process.env.NOTEBOOKLM_BL || DEFAULT_BL,
-      hl: "en-US",
-      _reqid: String(this.reqId),
-      rt: "c",
-    };
-    if (this.sessionId) {
-      params["f.sid"] = this.sessionId;
-    }
-    const query = new URLSearchParams(params).toString();
-    return `${BASE_URL}${BATCHEXECUTE_PATH}?${query}`;
-  }
-
-  private buildQueryUrl(sourcePath = "/"): string {
-    this.reqId++;
-    const params: Record<string, string> = {
-      bl: this.tokens.bl || process.env.NOTEBOOKLM_BL || DEFAULT_BL,
-      hl: "en",
-      _reqid: String(this.reqId),
-      rt: "c",
-    };
-    if (this.sessionId) {
-      params["f.sid"] = this.sessionId;
-    }
-    const query = new URLSearchParams(params).toString();
-    return `${BASE_URL}${QUERY_PATH}?${query}`;
-  }
-
-  private parseResponse(responseText: string): unknown[] {
-    let text = responseText;
-    if (text.startsWith(")]}'")) {
-      text = text.slice(4);
-    }
-
-    const lines = text.trim().split("\n");
-    const results: unknown[] = [];
-    let i = 0;
-
-    while (i < lines.length) {
-      const line = lines[i].trim();
-      if (!line) {
-        i++;
-        continue;
-      }
-
-      const maybeByteCount = parseInt(line, 10);
-      if (!isNaN(maybeByteCount) && String(maybeByteCount) === line) {
-        i++;
-        if (i < lines.length) {
-          try {
-            results.push(JSON.parse(lines[i]));
-          } catch (e) {
-            // Drop the chunk but log: silent skips here used to hide
-            // upstream API shape drift entirely.
-            console.warn(
-              `parseResponse: skipping unparseable framed chunk (${(e as Error).message}); first 80 chars: ${lines[i].slice(0, 80)}`,
-            );
-          }
-          i++;
-        }
-      } else {
-        try {
-          results.push(JSON.parse(line));
-        } catch (e) {
-          console.warn(
-            `parseResponse: skipping unparseable line (${(e as Error).message}); first 80 chars: ${line.slice(0, 80)}`,
-          );
-        }
-        i++;
-      }
-    }
-
-    return results;
-  }
-
-  private extractRpcResult(parsed: unknown[], rpcId: string, isRetry = false): unknown {
+  private extractRpcResult(parsed: unknown[], rpcId: string): unknown {
     for (const chunk of parsed) {
       if (!Array.isArray(chunk)) continue;
       for (const item of chunk) {
@@ -213,9 +69,7 @@ export class NotebookLMClient {
 
         // Extract Session ID if provided by Google
         if (item[0] === "af.httprm" && item.length >= 3 && typeof item[2] === "string") {
-          this.sessionId = item[2];
-          this.tokens.session_id = this.sessionId;
-          saveTokens(this.tokens);
+          this.auth.recordSessionId(item[2]);
         }
 
         if (item.length < 3) continue;
@@ -254,177 +108,73 @@ export class NotebookLMClient {
     rpcId: string,
     params: unknown,
     sourcePath = "/",
-    timeout = DEFAULT_TIMEOUT,
+    timeout: number = DEFAULT_TIMEOUT,
     isRetry = false,
   ): Promise<unknown> {
     // If CSRF or SID are missing, try to extract them first
-    if (!this.csrfToken || !this.sessionId) {
+    if (!this.auth.csrfToken || !this.auth.sessionId) {
       await this.refreshAuthTokens();
     }
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeout);
-
     try {
-      const url = this.buildUrl(rpcId, sourcePath);
-      const body = this.buildRequestBody(rpcId, params);
+      const envelopes = await this.transport.callBatchexecute(
+        rpcId,
+        params,
+        sourcePath,
+        timeout,
+      );
+      return this.extractRpcResult(envelopes, rpcId);
+    } catch (e) {
+      if (e instanceof AuthenticationError && !isRetry) {
+        console.error("🔄 Session expired. Checking for updated tokens on disk...");
 
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-          Origin: BASE_URL,
-          Referer: `${BASE_URL}/`,
-          Cookie: buildCookieHeader(this.tokens.cookies),
-          "X-Same-Domain": "1",
-          "User-Agent": USER_AGENT,
-          "sec-ch-ua": '"Not(A:Brand";v="99", "Google Chrome";v="133", "Chromium";v="133"',
-          "sec-ch-ua-mobile": "?0",
-          "sec-ch-ua-platform": '"Linux"',
-          "X-Goog-Encode-Response-If-Executable": "base64",
-          "X-Google-SIDRT": "1",
-        },
-        body,
-        signal: controller.signal,
-      });
-
-      // Surface transport-level failures before we attempt to parse — a
-      // 502/503 from Google's edge previously slipped through and got
-      // treated as "RPC returned empty result".
-      if (!response.ok) {
-        throw new Error(
-          `NotebookLM RPC ${rpcId} returned HTTP ${response.status} ${response.statusText}`,
-        );
-      }
-
-      // Update cookies from Set-Cookie headers
-      const setCookies = (response.headers as any).getSetCookie?.() || [];
-      if (setCookies.length > 0) {
-        for (const cookieStr of setCookies) {
-          const parts = cookieStr.split(";")[0].split("=");
-          if (parts.length >= 2) {
-            this.tokens.cookies[parts[0].trim()] = parts[1].trim();
-          }
+        // Try to reload tokens from disk first
+        if (await this.auth.reloadIfNewer()) {
+          console.error("✅ Found fresher tokens on disk. Retrying with new tokens...");
+          return this.execute(rpcId, params, sourcePath, timeout, true);
         }
-        saveTokens(this.tokens);
-      }
 
-      // The AbortController only aborts the fetch itself; response.text()
-      // can still hang on a slow body. Race the text read against the
-      // same signal so the overall timeout actually bounds wall-clock.
-      const text = await readBodyWithAbort(response, controller.signal);
-      const parsed = this.parseResponse(text);
+        console.error("🔄 Effortlessly restoring your connection in the background...");
+        try {
+          await this.auth.refreshOnce();
 
-      try {
-        return this.extractRpcResult(parsed, rpcId, isRetry);
-      } catch (e) {
-        if (e instanceof AuthenticationError && !isRetry) {
-          console.error("🔄 Session expired. Checking for updated tokens on disk...");
-          
-          // Try to reload tokens from disk first
+          // Warm up session with a real RPC call (Settings)
           try {
-            const { loadTokensFromCache } = await import("./auth.js");
-            const freshTokens = loadTokensFromCache();
-            if (freshTokens && freshTokens.extracted_at > this.tokens.extracted_at) {
-              console.error("✅ Found fresher tokens on disk. Retrying with new tokens...");
-              this.tokens = freshTokens;
-              this.csrfToken = freshTokens.csrf_token;
-              this.sessionId = freshTokens.session_id;
-              return this.execute(rpcId, params, sourcePath, timeout, true);
-            }
-          } catch (reloadError) {
-            // ignore
+            await this.execute(RPC_IDS.SETTINGS, [null, 1], "/", 5000, true);
+          } catch {
+            // ignore warmup error
           }
 
-          console.error("🔄 Effortlessly restoring your connection in the background...");
-          try {
-            const newTokens = await this.refreshAuthOnce();
+          await new Promise((r) => setTimeout(r, 1000));
 
-            this.tokens = newTokens;
-            this.csrfToken = newTokens.csrf_token;
-            this.sessionId = newTokens.session_id;
-
-            // Warm up session with a real RPC call (Settings)
-            try {
-              await this.execute(RPC_IDS.SETTINGS, [null, 1], "/", 5000, true);
-            } catch {
-              // ignore warmup error
-            }
-
-            await new Promise(r => setTimeout(r, 1000));
-
-            // Retry original request
-            return this.execute(rpcId, params, sourcePath, timeout, true);
-          } catch (finalError) {
-            console.error("❌ Authentication failed:", (finalError as Error).message);
-            throw e;
-          }
+          // Retry original request
+          return this.execute(rpcId, params, sourcePath, timeout, true);
+        } catch (finalError) {
+          console.error("❌ Authentication failed:", (finalError as Error).message);
+          throw e;
         }
-        throw e;
       }
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
-  private async refreshAuthOnce(): Promise<AuthTokens> {
-    if (this.authRefreshPromise) {
-      return this.authRefreshPromise;
-    }
-    this.authRefreshPromise = (async () => {
-      try {
-        return await refreshCookiesHeadless();
-      } catch {
-        console.error(
-          "⚠️ Automatic refresh encountered a hiccup. Launching a manual login window to get you back on track.",
-        );
-        return await runBrowserAuthFlow();
-      }
-    })();
-    try {
-      return await this.authRefreshPromise;
-    } finally {
-      this.authRefreshPromise = null;
+      throw e;
     }
   }
 
   private async refreshAuthTokens(): Promise<void> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT);
+    const html = await this.transport.fetchLandingHtml(DEFAULT_TIMEOUT);
+    const csrf = extractCsrfFromPage(html);
+    const sid = extractSessionIdFromPage(html);
 
-    try {
-      const response = await fetch(BASE_URL, {
-        headers: {
-          Cookie: buildCookieHeader(this.tokens.cookies),
-          "User-Agent": USER_AGENT,
-          Accept: "text/html",
-        },
-        signal: controller.signal,
-      });
+    if (csrf) {
+      this.auth.recordCsrfToken(csrf);
+      console.error("✅ New CSRF token extracted.");
+    } else {
+      console.error("⚠️ Failed to extract CSRF token from page.");
+    }
 
-      const html = await response.text();
-      const csrf = extractCsrfFromPage(html);
-      const sid = extractSessionIdFromPage(html);
-
-      if (csrf) {
-        this.csrfToken = csrf;
-        console.error("✅ New CSRF token extracted.");
-      } else {
-        console.error("⚠️ Failed to extract CSRF token from page.");
-      }
-      
-      if (sid) {
-        this.sessionId = sid;
-        console.error("✅ New Session ID extracted.");
-      } else {
-        console.error("⚠️ Failed to extract Session ID from page.");
-      }
-
-      this.tokens.csrf_token = this.csrfToken;
-      this.tokens.session_id = this.sessionId;
-      saveTokens(this.tokens);
-    } finally {
-      clearTimeout(timer);
+    if (sid) {
+      this.auth.recordSessionId(sid);
+      console.error("✅ New Session ID extracted.");
+    } else {
+      console.error("⚠️ Failed to extract Session ID from page.");
     }
   }
 
@@ -650,23 +400,6 @@ export class NotebookLMClient {
     };
   }
 
-  private extractTextFromBlocks(data: any): string {
-    if (!Array.isArray(data) || !Array.isArray(data[0])) return "";
-    let text = "";
-    for (const block of data[0]) {
-      try {
-        // Path discovered via deep inspection: block[2][2][0][0][2][0]
-        const content = block?.[2]?.[2]?.[0]?.[0]?.[2]?.[0];
-        if (typeof content === "string") {
-          text += content;
-        }
-      } catch {
-        // skip malformed blocks
-      }
-    }
-    return text;
-  }
-
   async getSource(
     sourceId: string,
     notebookId: string,
@@ -682,7 +415,7 @@ export class NotebookLMClient {
       id: sourceId,
       title: meta?.[1] || "Untitled",
       type: SOURCE_TYPES.getName(Array.isArray(meta?.[3]) ? meta[3][1] : meta?.[3]),
-      content: this.extractTextFromBlocks(data?.[3]),
+      content: extractWireText(data?.[3]),
       summary: null,
       keywords: [],
     };
@@ -759,7 +492,7 @@ export class NotebookLMClient {
     isRetry = false,
   ): Promise<QueryResponse> {
     // If CSRF or SID are missing, try to extract them first
-    if (!this.csrfToken || !this.sessionId) {
+    if (!this.auth.csrfToken || !this.auth.sessionId) {
       await this.refreshAuthTokens();
     }
 
@@ -784,61 +517,22 @@ export class NotebookLMClient {
       1,
     ];
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.queryTimeout);
-
     try {
       const fReq = JSON.stringify([null, JSON.stringify(params)]);
-      let bodyParts = [`f.req=${encodeURIComponent(fReq)}`];
-      if (this.csrfToken) {
-        bodyParts.push(`at=${encodeURIComponent(this.csrfToken)}`);
+      const bodyParts = [`f.req=${encodeURIComponent(fReq)}`];
+      if (this.auth.csrfToken) {
+        bodyParts.push(`at=${encodeURIComponent(this.auth.csrfToken)}`);
       }
-      if (this.sessionId) {
-        bodyParts.push(`f.sid=${encodeURIComponent(this.sessionId)}`);
+      if (this.auth.sessionId) {
+        bodyParts.push(`f.sid=${encodeURIComponent(this.auth.sessionId)}`);
       }
       const body = bodyParts.join("&");
-      const url = this.buildQueryUrl(`/notebook/${notebookId}`);
 
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-          Origin: BASE_URL,
-          Referer: `${BASE_URL}/`,
-          Cookie: buildCookieHeader(this.tokens.cookies),
-          "X-Same-Domain": "1",
-          "User-Agent": USER_AGENT,
-          "sec-ch-ua": '"Not(A:Brand";v="99", "Google Chrome";v="133", "Chromium";v="133"',
-          "sec-ch-ua-mobile": "?0",
-          "sec-ch-ua-platform": '"Linux"',
-          "X-Goog-Encode-Response-If-Executable": "base64",
-          "X-Google-SIDRT": "1",
-          "X-Goog-BatchExecute-Path": "/_/LabsTailwindUi/data/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateFreeFormStreamed",
-        },
+      const parsed = await this.transport.callQuery(
+        notebookId,
         body,
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        throw new Error(
-          `NotebookLM query returned HTTP ${response.status} ${response.statusText}`,
-        );
-      }
-
-      // Update cookies from Set-Cookie headers
-      const setCookies = (response.headers as any).getSetCookie?.() || [];
-      if (setCookies.length > 0) {
-        for (const cookieStr of setCookies) {
-          const parts = cookieStr.split(";")[0].split("=");
-          if (parts.length >= 2) {
-            this.tokens.cookies[parts[0].trim()] = parts[1].trim();
-          }
-        }
-        saveTokens(this.tokens);
-      }
-
-      const text = await readBodyWithAbort(response, controller.signal);
-      const parsed = this.parseResponse(text);
+        this.queryTimeout,
+      );
 
       let bestAnswer = "";
       let convId: string | null = conversationId || null;
@@ -884,42 +578,30 @@ export class NotebookLMClient {
 
       // Store history for next turn
       if (convId && bestAnswer) {
-        const history = this.conversationHistory.get(convId) || [];
-        history.push([queryText, null, 1]);
-        history.push([bestAnswer, null, 2]);
-        this.conversationHistory.set(convId, history.slice(-10)); // Keep last 10 turns
+        const turnHistory = this.conversationHistory.get(convId) || [];
+        turnHistory.push([queryText, null, 1]);
+        turnHistory.push([bestAnswer, null, 2]);
+        this.conversationHistory.set(convId, turnHistory.slice(-10)); // Keep last 10 turns
       }
 
       return {
         answer: bestAnswer,
         conversation_id: convId,
+        sources_used: [],
       };
     } catch (e) {
       if (e instanceof AuthenticationError && !isRetry) {
         console.error("🔄 Session expired. Checking for updated tokens on disk...");
-        
+
         // Try to reload tokens from disk first
-        try {
-          const { loadTokensFromCache } = await import("./auth.js");
-          const freshTokens = loadTokensFromCache();
-          if (freshTokens && freshTokens.extracted_at > this.tokens.extracted_at) {
-            console.error("✅ Found fresher tokens on disk. Retrying with new tokens...");
-            this.tokens = freshTokens;
-            this.csrfToken = freshTokens.csrf_token;
-            this.sessionId = freshTokens.session_id;
-            return this.query(notebookId, queryText, sourceIds, conversationId, true);
-          }
-        } catch (reloadError) {
-          // ignore
+        if (await this.auth.reloadIfNewer()) {
+          console.error("✅ Found fresher tokens on disk. Retrying with new tokens...");
+          return this.query(notebookId, queryText, sourceIds, conversationId, true);
         }
 
         console.error("🔄 Effortlessly restoring your connection in the background...");
         try {
-          const newTokens = await this.refreshAuthOnce();
-
-          this.tokens = newTokens;
-          this.csrfToken = newTokens.csrf_token;
-          this.sessionId = newTokens.session_id;
+          await this.auth.refreshOnce();
 
           // Warm up session with a real RPC call (Settings)
           try {
@@ -928,7 +610,7 @@ export class NotebookLMClient {
             // ignore warmup error
           }
 
-          await new Promise(r => setTimeout(r, 1000));
+          await new Promise((r) => setTimeout(r, 1000));
 
           // Retry original request
           return this.query(notebookId, queryText, sourceIds, conversationId, true);
@@ -941,8 +623,6 @@ export class NotebookLMClient {
         throw new Error("Query timed out. Try increasing the timeout with --query-timeout.");
       }
       throw e;
-    } finally {
-      clearTimeout(timer);
     }
   }
 
