@@ -69,11 +69,35 @@ For headless / CI environments, set `NOTEBOOKLM_COOKIES` (and optionally `NOTEBO
 
 ## 🤖 AI Assistant Integration
 
-> **Looking for Codex CLI, Gemini CLI, Windsurf, JetBrains AI Assistant, Zed, OpenCode, Cline, Goose, 5ire, or the OpenAI Agents SDK?** See the [multi-client integration guide on GitHub](https://github.com/m4yk3ldev/notebooklm-mcp/blob/main/docs/clients.md) — copy-paste config for 15+ MCP clients in one place.
+Pick your client below — every section shows the **config file path per OS**, a **minimal copy-paste block**, and the **advanced variant** with `--query-timeout` and `NOTEBOOKLM_COOKIES` env override.
 
-### Claude Desktop / Claude Code
+| Client | Config file | Format |
+|---|---|---|
+| [Claude Desktop](#claude-desktop) | `claude_desktop_config.json` | JSON |
+| [Claude Code (CLI)](#claude-code-cli) | `~/.claude.json` or `claude mcp add` | JSON / CLI |
+| [Codex CLI](#codex-cli) | `~/.codex/config.toml` | TOML |
+| [OpenAI Agents SDK (Python)](#openai-agents-sdk--python) | in-code | Python |
+| [OpenAI Agents SDK (TypeScript)](#openai-agents-sdk--typescript) | in-code | TypeScript |
+| [Gemini CLI](#gemini-cli) | `~/.gemini/settings.json` | JSON |
+| [Cursor](#cursor) | `~/.cursor/mcp.json` | JSON |
+| [VS Code (Copilot Chat agent mode)](#vs-code-copilot-chat-agent-mode) | `.vscode/mcp.json` | JSON |
+| [Windsurf](#windsurf) | `~/.codeium/windsurf/mcp_config.json` | JSON |
+| [JetBrains AI Assistant / Junie](#jetbrains-ai-assistant--junie) | `~/.junie/mcp/mcp.json` | JSON |
+| [Zed](#zed) | `~/.config/zed/settings.json` | JSON |
+| [OpenCode (sst)](#opencode-sst) | `opencode.jsonc` | JSONC |
+| [Cline (VS Code extension)](#cline-vs-code-extension) | extension settings UI | JSON |
+| [Goose (Block)](#goose-block) | `~/.config/goose/config.yaml` | YAML |
+| [5ire](#5ire) | in-app settings | GUI |
+| [Aider](#aider) | not yet supported | — |
+| [Generic stdio caller](#generic-stdio-caller) | yours | — |
 
-Add the following to your `mcpServers` configuration (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows; for Claude Code use the `claude mcp add` CLI):
+---
+
+### Claude Desktop
+
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Linux: `~/.config/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
 
 ```json
 {
@@ -86,7 +110,7 @@ Add the following to your `mcpServers` configuration (`~/Library/Application Sup
 }
 ```
 
-Need a longer timeout for big studio jobs, or want to point at a sidecar cookie file? Pass extra flags + env:
+<details><summary>With timeout + env override</summary>
 
 ```json
 {
@@ -102,9 +126,145 @@ Need a longer timeout for big studio jobs, or want to point at a sidecar cookie 
 }
 ```
 
-### Cursor
+**Verify:** restart Claude Desktop, click the hammer icon at the bottom-right of the input. **Gotchas:** absolute paths only; relative paths fail silently on startup.
 
-Edit `~/.cursor/mcp.json` (or per-project `.cursor/mcp.json`):
+</details>
+
+---
+
+### Claude Code (CLI)
+
+Recommended path is the `claude mcp add` CLI (writes the JSON for you):
+
+```bash
+claude mcp add --transport stdio notebooklm -- npx -y @m4ykeldev/notebooklm-mcp serve
+```
+
+<details><summary>Equivalent JSON (project scope, <code>./.mcp.json</code>)</summary>
+
+```json
+{
+  "mcpServers": {
+    "notebooklm": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@m4ykeldev/notebooklm-mcp", "serve"]
+    }
+  }
+}
+```
+
+</details>
+
+<details><summary>With timeout + env override (CLI)</summary>
+
+```bash
+claude mcp add --transport stdio \
+  --env NOTEBOOKLM_COOKIES="SID=...; HSID=...; SSID=...; APISID=...; SAPISID=..." \
+  notebooklm -- npx -y @m4ykeldev/notebooklm-mcp serve --query-timeout 180000
+```
+
+**Verify:** `claude mcp list && claude mcp get notebooklm`, or `/mcp` inside a session. **Gotchas:** all options before the server name; use `--` to separate options from the command. Project-scoped `.mcp.json` needs interactive approval on first sight.
+
+</details>
+
+---
+
+### Codex CLI
+
+- macOS: `~/.codex/config.toml`
+- Linux: `~/.config/codex/config.toml`
+- Windows: `%APPDATA%\codex\config.toml`
+
+```toml
+[mcp_servers.notebooklm]
+command = "npx"
+args = ["-y", "@m4ykeldev/notebooklm-mcp", "serve"]
+```
+
+<details><summary>With timeout + env override</summary>
+
+```toml
+[mcp_servers.notebooklm]
+command = "npx"
+args = ["-y", "@m4ykeldev/notebooklm-mcp", "serve", "--query-timeout", "180000"]
+env = { NOTEBOOKLM_COOKIES = "SID=...; HSID=...; SSID=...; APISID=...; SAPISID=..." }
+```
+
+**Verify:** `codex --list-tools` should list the NotebookLM tools. **Gotchas:** Codex CLI's MCP schema is still being formalized — double-check against the latest `openai/codex` README.
+
+</details>
+
+---
+
+### OpenAI Agents SDK — Python
+
+Wire it in code (no config file):
+
+```python
+from agents.mcp import MCPServerStdio
+
+async with MCPServerStdio(
+    name="NotebookLM",
+    params={
+        "command": "npx",
+        "args": ["-y", "@m4ykeldev/notebooklm-mcp", "serve"],
+    },
+) as server:
+    tools = await server.list_tools()
+    print([t.name for t in tools])  # 32 tools
+```
+
+<details><summary>With timeout + env override</summary>
+
+```python
+async with MCPServerStdio(
+    name="NotebookLM",
+    params={
+        "command": "npx",
+        "args": ["-y", "@m4ykeldev/notebooklm-mcp", "serve", "--query-timeout", "180000"],
+        "env": {"NOTEBOOKLM_COOKIES": "SID=...; HSID=...; SSID=...; APISID=...; SAPISID=..."},
+    },
+) as server:
+    ...
+```
+
+</details>
+
+---
+
+### OpenAI Agents SDK — TypeScript
+
+```typescript
+import { MCPServerStdio } from "@openai/agents";
+
+const server = new MCPServerStdio({
+  command: "npx",
+  args: ["-y", "@m4ykeldev/notebooklm-mcp", "serve"],
+});
+
+await server.connect();
+const tools = await server.listTools();
+console.log(tools.map((t) => t.name)); // 32 tools
+```
+
+<details><summary>With timeout + env override</summary>
+
+```typescript
+const server = new MCPServerStdio({
+  command: "npx",
+  args: ["-y", "@m4ykeldev/notebooklm-mcp", "serve", "--query-timeout", "180000"],
+  env: { NOTEBOOKLM_COOKIES: "SID=...; HSID=...; SSID=...; APISID=...; SAPISID=..." },
+});
+```
+
+</details>
+
+---
+
+### Gemini CLI
+
+`~/.gemini/settings.json` (user-global) or `.gemini/settings.json` (per-project).
 
 ```json
 {
@@ -117,15 +277,38 @@ Edit `~/.cursor/mcp.json` (or per-project `.cursor/mcp.json`):
 }
 ```
 
-### VS Code (GitHub Copilot Chat / Continue)
-
-Edit `.vscode/mcp.json` in your project root:
+<details><summary>With timeout + env override (Gemini supports <code>$VAR</code> expansion)</summary>
 
 ```json
 {
-  "servers": {
+  "mcpServers": {
     "notebooklm": {
-      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@m4ykeldev/notebooklm-mcp", "serve"],
+      "timeout": 180000,
+      "env": {
+        "NOTEBOOKLM_COOKIES": "$NOTEBOOKLM_COOKIES"
+      }
+    }
+  }
+}
+```
+
+**Verify:** `gemini mcp list`, or `/mcp` in a session. **Gotchas:** undefined `$VAR` resolves to empty string — pre-export them in your shell.
+
+</details>
+
+---
+
+### Cursor
+
+- macOS / Linux: `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` (per-project)
+- Windows: `%APPDATA%\Cursor\mcp.json`
+
+```json
+{
+  "mcpServers": {
+    "notebooklm": {
       "command": "npx",
       "args": ["-y", "@m4ykeldev/notebooklm-mcp", "serve"]
     }
@@ -133,11 +316,347 @@ Edit `.vscode/mcp.json` in your project root:
 }
 ```
 
-### Verify the wiring
+<details><summary>With timeout + env override</summary>
+
+```json
+{
+  "mcpServers": {
+    "notebooklm": {
+      "command": "npx",
+      "args": ["-y", "@m4ykeldev/notebooklm-mcp", "serve", "--query-timeout", "180000"],
+      "env": {
+        "NOTEBOOKLM_COOKIES": "SID=...; HSID=...; SSID=...; APISID=...; SAPISID=..."
+      }
+    }
+  }
+}
+```
+
+**Verify:** `Cursor Settings → MCP` should show `notebooklm` in green, or `MCP: View Server Status` in the Command Palette. **Gotchas:** Cursor only loads MCP servers at startup — fully quit and relaunch after edits. Soft ~40-tool ceiling across all enabled servers combined.
+
+</details>
+
+---
+
+### VS Code (Copilot Chat agent mode)
+
+`.vscode/mcp.json` (per-project). Top-level key is **`servers`** (not `mcpServers` — Microsoft renamed this).
+
+```json
+{
+  "servers": {
+    "notebooklm": {
+      "command": "npx",
+      "args": ["-y", "@m4ykeldev/notebooklm-mcp", "serve"]
+    }
+  }
+}
+```
+
+<details><summary>With timeout + env override</summary>
+
+```json
+{
+  "servers": {
+    "notebooklm": {
+      "command": "npx",
+      "args": ["-y", "@m4ykeldev/notebooklm-mcp", "serve", "--query-timeout", "180000"],
+      "env": {
+        "NOTEBOOKLM_COOKIES": "SID=...; HSID=...; SSID=...; APISID=...; SAPISID=..."
+      }
+    }
+  }
+}
+```
+
+**Verify:** Command Palette → `MCP: Open User Configuration`. Ask Copilot Chat in **agent mode** to list NotebookLM notebooks.
+
+</details>
+
+---
+
+### Windsurf
+
+- macOS / Linux: `~/.codeium/windsurf/mcp_config.json`
+- Windows: `%APPDATA%\Codeium\Windsurf\mcp_config.json`
+
+```json
+{
+  "mcpServers": {
+    "notebooklm": {
+      "command": "npx",
+      "args": ["-y", "@m4ykeldev/notebooklm-mcp", "serve"]
+    }
+  }
+}
+```
+
+<details><summary>With timeout + env override (uses Windsurf's <code>${env:VAR}</code> interpolation)</summary>
+
+```json
+{
+  "mcpServers": {
+    "notebooklm": {
+      "command": "npx",
+      "args": ["-y", "@m4ykeldev/notebooklm-mcp", "serve", "--query-timeout", "180000"],
+      "env": {
+        "NOTEBOOKLM_COOKIES": "${env:NOTEBOOKLM_COOKIES}"
+      }
+    }
+  }
+}
+```
+
+**Verify:** open the Cascade sidebar → MCP settings → confirm `notebooklm` is active. **Gotchas:** prefer `${env:VAR}` / `${file:/path}` interpolation over inlining cookies; Windsurf substitutes at server-launch time so secrets stay out of the config file.
+
+</details>
+
+---
+
+### JetBrains AI Assistant / Junie
+
+- macOS / Linux: `~/.junie/mcp/mcp.json` (user-global) or `.junie/mcp/mcp.json` (per-project)
+- Windows: `%APPDATA%\JetBrains\Junie\mcp.json`
+
+```json
+{
+  "mcpServers": {
+    "notebooklm": {
+      "command": "npx",
+      "args": ["-y", "@m4ykeldev/notebooklm-mcp", "serve"]
+    }
+  }
+}
+```
+
+<details><summary>With timeout + env override</summary>
+
+```json
+{
+  "mcpServers": {
+    "notebooklm": {
+      "command": "npx",
+      "args": ["-y", "@m4ykeldev/notebooklm-mcp", "serve", "--query-timeout", "180000"],
+      "env": {
+        "NOTEBOOKLM_COOKIES": "SID=...; HSID=...; SSID=...; APISID=...; SAPISID=..."
+      }
+    }
+  }
+}
+```
+
+**Verify:** `Settings (Ctrl+Alt+S) → Tools → Junie → MCP Settings` — `notebooklm` should appear in the discovered list.
+
+</details>
+
+---
+
+### Zed
+
+`~/.config/zed/settings.json` — the relevant key is **`context_servers`** (Zed's MCP equivalent).
+
+```json
+{
+  "context_servers": {
+    "notebooklm": {
+      "command": "npx",
+      "args": ["-y", "@m4ykeldev/notebooklm-mcp", "serve"]
+    }
+  }
+}
+```
+
+<details><summary>With timeout + env override</summary>
+
+```json
+{
+  "context_servers": {
+    "notebooklm": {
+      "command": "npx",
+      "args": ["-y", "@m4ykeldev/notebooklm-mcp", "serve", "--query-timeout", "180000"],
+      "env": {
+        "NOTEBOOKLM_COOKIES": "SID=...; HSID=...; SSID=...; APISID=...; SAPISID=..."
+      }
+    }
+  }
+}
+```
+
+**Verify:** Zed's AI Agent Panel lists `notebooklm` as an available context source.
+
+</details>
+
+---
+
+### OpenCode (sst)
+
+`opencode.jsonc` (project root) or `~/.config/opencode/config.json`.
+
+```jsonc
+{
+  "mcp": {
+    "servers": {
+      "notebooklm": {
+        "command": "npx",
+        "args": ["-y", "@m4ykeldev/notebooklm-mcp", "serve"]
+      }
+    }
+  }
+}
+```
+
+<details><summary>With timeout + env override</summary>
+
+```jsonc
+{
+  "mcp": {
+    "servers": {
+      "notebooklm": {
+        "command": "npx",
+        "args": ["-y", "@m4ykeldev/notebooklm-mcp", "serve", "--query-timeout", "180000"],
+        "env": {
+          "NOTEBOOKLM_COOKIES": "SID=...; HSID=...; SSID=...; APISID=...; SAPISID=..."
+        }
+      }
+    }
+  }
+}
+```
+
+**Verify:** start OpenCode and ask *"List my NotebookLM notebooks."* — the model should call `notebook_list`. **Gotchas:** OpenCode's MCP schema is still evolving; confirm against the [OpenCode docs](https://opencode.ai/docs) if startup fails.
+
+</details>
+
+---
+
+### Cline (VS Code extension)
+
+Managed via Cline's MCP settings UI inside VS Code. Underlying file (don't edit by hand): `~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json`.
+
+1. Open the Cline panel → click the MCP icon → `Configure MCP Servers`.
+2. Paste:
+
+```json
+{
+  "mcpServers": {
+    "notebooklm": {
+      "command": "npx",
+      "args": ["-y", "@m4ykeldev/notebooklm-mcp", "serve"]
+    }
+  }
+}
+```
+
+3. Save. Cline restarts the server automatically.
+
+<details><summary>With timeout + env override</summary>
+
+```json
+{
+  "mcpServers": {
+    "notebooklm": {
+      "command": "npx",
+      "args": ["-y", "@m4ykeldev/notebooklm-mcp", "serve", "--query-timeout", "180000"],
+      "env": {
+        "NOTEBOOKLM_COOKIES": "SID=...; HSID=...; SSID=...; APISID=...; SAPISID=..."
+      }
+    }
+  }
+}
+```
+
+**Verify:** ask Cline *"List my NotebookLM notebooks."* — the tool-call panel shows `notebook_list`.
+
+</details>
+
+---
+
+### Goose (Block)
+
+`~/.config/goose/config.yaml` (or via `goose configure`). Goose calls MCP servers "extensions".
+
+```yaml
+extensions:
+  notebooklm:
+    type: stdio
+    command: npx
+    args:
+      - "-y"
+      - "@m4ykeldev/notebooklm-mcp"
+      - serve
+```
+
+<details><summary>With timeout + env override</summary>
+
+```yaml
+extensions:
+  notebooklm:
+    type: stdio
+    command: npx
+    args:
+      - "-y"
+      - "@m4ykeldev/notebooklm-mcp"
+      - serve
+      - "--query-timeout"
+      - "180000"
+    env:
+      NOTEBOOKLM_COOKIES: "SID=...; HSID=...; SSID=...; APISID=...; SAPISID=..."
+```
+
+**Verify:** `goose configure` → confirm the extension is enabled, then `goose session` and ask *"List my NotebookLM notebooks."*
+
+</details>
+
+---
+
+### 5ire
+
+GUI app (no user-editable config file):
+
+1. Open 5ire → `Settings` (`Mod+K` → `Providers`).
+2. Click **Add MCP Server**.
+3. Name: `notebooklm`
+4. Type: `Stdio`
+5. Command: `npx`
+6. Args: `-y @m4ykeldev/notebooklm-mcp serve` (add `--query-timeout 180000` if needed)
+7. Env vars (optional): `NOTEBOOKLM_COOKIES=SID=...; HSID=...; SSID=...; APISID=...; SAPISID=...`
+8. Save and restart.
+
+**Verify:** ask in chat *"List my NotebookLM notebooks."* — tool-call panel shows `notebook_list`.
+
+---
+
+### Aider
+
+Aider does not yet have first-class MCP-server client integration. Workarounds: run `notebooklm-mcp serve` separately and pipe responses, or use the [generic stdio caller](#generic-stdio-caller) inside a small wrapper script. Track upstream support via the [Aider Discord](https://discord.gg/Y7X7bhMQFV).
+
+---
+
+### Generic stdio caller
+
+If your client speaks the [MCP protocol](https://modelcontextprotocol.io/specification) over stdio but isn't listed above, every config above reduces to the same primitive:
+
+```
+spawn:   npx -y @m4ykeldev/notebooklm-mcp serve
+stdio:   parent <- stdout (JSON-RPC responses) | parent -> stdin (JSON-RPC requests)
+env:     (optional)
+  NOTEBOOKLM_COOKIES=...        # skip the auth flow in CI
+  NOTEBOOKLM_CSRF_TOKEN=...
+  NOTEBOOKLM_SESSION_ID=...
+flags:   (optional)
+  --query-timeout <ms>          # per-RPC timeout, default 120000
+  --debug                       # verbose stderr logging
+```
+
+On connection the server advertises 32 tools — see the [Complete Tool Reference](#-complete-tool-reference-32) below.
+
+---
+
+### Verify any wiring
 
 After restarting your client, ask:
 
-> "List my NotebookLM notebooks."
+> *"List my NotebookLM notebooks."*
 
 If the model invokes `notebook_list` and returns a table of titles, you're connected.
 
