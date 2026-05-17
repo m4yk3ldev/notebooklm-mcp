@@ -69,6 +69,8 @@ For headless / CI environments, set `NOTEBOOKLM_COOKIES` (and optionally `NOTEBO
 
 ## 🤖 AI Assistant Integration
 
+> **Looking for Codex CLI, Gemini CLI, Windsurf, JetBrains AI Assistant, Zed, OpenCode, Cline, Goose, 5ire, or the OpenAI Agents SDK?** See [docs/clients.md](docs/clients.md) — copy-paste config for 15+ MCP clients in one place.
+
 ### Claude Desktop / Claude Code
 
 Add the following to your `mcpServers` configuration (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows; for Claude Code use the `claude mcp add` CLI):
