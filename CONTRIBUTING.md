@@ -106,6 +106,39 @@ Each MCP tool maps to one or more RPC calls defined in `constants.ts`. The `clie
 - Include your Node.js version, OS, and steps to reproduce
 - For authentication issues, include which cookies are present (not the values!)
 
+## Releasing
+
+Releases are cut from `main`. The flow:
+
+```bash
+make release        # bumps version, updates CHANGELOG, commits, tags (local only)
+make pre-release    # optional: run audit early to catch issues before tagging
+make release-push   # runs pre-release audit, then pushes commit + tag to origin
+```
+
+`make release-push` will refuse to push if any of the following fail:
+
+1. Uncommitted changes in the working tree
+2. `npm ci` — lockfile / `package.json` drift
+3. `npm run build` — type or build errors
+4. `npm test`
+5. `npm audit --audit-level=high` — known high/critical CVEs in deps
+6. `npm audit signatures` — tampered or unsigned packages in `node_modules`
+7. `lockfile-lint` — any transitive dep resolves to a non-npm registry or non-HTTPS URL
+8. `npm pack --dry-run` — unexpected files (e.g. `src/`, `scripts/`, `.env`) in the publish manifest
+
+Emergency override (logs the bypass):
+
+```bash
+SKIP_AUDIT_LEVEL=1 make release-push   # accept current vuln findings
+```
+
+Optional supply-chain deep scan via Socket (requires `SOCKET_SECURITY_API_KEY`):
+
+```bash
+SKIP_SOCKET=0 make pre-release
+```
+
 ## License
 
 By contributing, you agree that your contributions will be licensed under the [MIT License](LICENSE).

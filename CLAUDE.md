@@ -24,6 +24,13 @@ node dist/cli.js auth
 npm test
 ```
 
+```bash
+# Release flow
+make release        # local bump + tag
+make release-push   # supply-chain audit then push (publishes via CI on tag)
+make pre-release    # standalone audit
+```
+
 TypeScript strict mode is the primary quality gate — fix all type errors before building. CI runs `npm test` before publishing to NPM.
 
 ## Architecture
