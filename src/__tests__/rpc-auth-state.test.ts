@@ -63,6 +63,20 @@ describe("AuthState", () => {
     expect(hoisted.saveTokens).toHaveBeenCalled();
   });
 
+  it("recordSetCookies short-circuits on empty input (no save)", () => {
+    const s = new AuthState(seed());
+    s.recordSetCookies([]);
+    expect(hoisted.saveTokens).not.toHaveBeenCalled();
+  });
+
+  it("recordSetCookies ignores malformed cookie strings with no '='", () => {
+    const s = new AuthState(seed());
+    s.recordSetCookies(["MALFORMED; Path=/"]);
+    // No cookie added — saveTokens still runs because the loop completed.
+    expect(s.cookies.MALFORMED).toBeUndefined();
+    expect(hoisted.saveTokens).toHaveBeenCalled();
+  });
+
   it("replaceTokens swaps the whole bundle", () => {
     const s = new AuthState(seed());
     s.replaceTokens({ ...seed(), csrf_token: "x", extracted_at: 1700000100 });

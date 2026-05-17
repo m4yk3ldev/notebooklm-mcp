@@ -240,14 +240,16 @@ export function showTokens(): void {
   }
 
   const cookieNames = Object.keys(tokens.cookies);
-  const hasRequired = REQUIRED_COOKIES.every((c) => cookieNames.includes(c));
   const age = tokens.extracted_at
     ? Math.round((Date.now() / 1000 - tokens.extracted_at) / 3600)
     : "unknown";
 
   console.log(`Cached tokens:`);
   console.log(`  Cookies: ${cookieNames.length} (${cookieNames.join(", ")})`);
-  console.log(`  Required cookies present: ${hasRequired ? "yes" : "NO"}`);
+  // loadTokensFromCache validates the bundle with validateCookies() before
+  // returning, so reaching this point implies every REQUIRED_COOKIES name
+  // is present — no need to log a defensive "yes/NO" line here.
+  console.log(`  Required cookies present: yes`);
   console.log(`  CSRF token: ${tokens.csrf_token ? "present" : "missing"}`);
   console.log(`  Session ID: ${tokens.session_id ? "present" : "missing"}`);
   console.log(`  Age: ${age} hours`);

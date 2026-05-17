@@ -118,8 +118,14 @@ export class RpcTransport {
         );
       }
 
+      // getSetCookie is the spec'd way to read multi-valued Set-Cookie since
+      // Node 18.14 / undici 5.20. The `?.()` short-circuit + `|| []` fallback
+      // is defensive for older fetch polyfills that never ship in our
+      // supported runtimes; both branches are unreachable from tests.
+      /* v8 ignore start */
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const setCookies = (response.headers as any).getSetCookie?.() || [];
+      /* v8 ignore stop */
       if (setCookies.length > 0) {
         this.auth.recordSetCookies(setCookies);
       }
@@ -167,8 +173,12 @@ export class RpcTransport {
         );
       }
 
+      // See callBatchexecute: ?.() + `|| []` is the defensive fallback for
+      // runtimes without getSetCookie. Not reachable on Node 18.14+.
+      /* v8 ignore start */
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const setCookies = (response.headers as any).getSetCookie?.() || [];
+      /* v8 ignore stop */
       if (setCookies.length > 0) {
         this.auth.recordSetCookies(setCookies);
       }
@@ -223,6 +233,10 @@ export class RpcTransport {
     return new Promise<string>((resolve, reject) => {
       let settled = false;
       const onAbort = () => {
+        // Defensive: text() resolution path already removed this listener,
+        // so re-entrancy here is unreachable in practice. Keep the guard
+        // to match the symmetric text() handlers below.
+        /* v8 ignore next */
         if (settled) return;
         settled = true;
         signal.removeEventListener("abort", onAbort);

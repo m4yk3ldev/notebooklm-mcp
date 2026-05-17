@@ -579,4 +579,15 @@ describe("authTools", () => {
     expect(savedTokens.cookies).toEqual({});
     expect(result._client_action).toBe("reset");
   });
+
+  it("save_auth_tokens skips cookie segments with no '=' separator", async () => {
+    await findTool(authTools, "save_auth_tokens").execute(
+      {},
+      { cookies: "SID=a; ORPHAN; HSID=b" },
+      noopOpts(),
+    );
+    const [savedTokens] = vi.mocked(saveTokens).mock.calls[0];
+    expect(savedTokens.cookies).toEqual({ SID: "a", HSID: "b" });
+    expect(savedTokens.cookies.ORPHAN).toBeUndefined();
+  });
 });

@@ -166,6 +166,85 @@ describe("notebook RPCs", () => {
     expect(nb.created_at).toMatch(/^2023-/);
   });
 
+  it("getNotebook applies all defensive fallbacks for sparse notebook payload", async () => {
+    // Every field that has a `|| default` / `?? null` branch is intentionally
+    // missing so the fallback path runs. The outer wrapper is mandatory so
+    // the unwrap heuristic (d[0][2] contains "-") fires.
+    mockBatchexecute({
+      [RPC_IDS.GET_NOTEBOOK]: [
+        [null, [[["raw-id"], null, null, null]], "nb-bare", null, null, [99, false, 0]],
+      ],
+    });
+    const nb = await new NotebookLMClient(tokens).getNotebook("nb-bare");
+    expect(nb.title).toBe("Untitled");
+    expect(nb.emoji).toBeNull();
+    expect(nb.is_shared).toBe(false);
+    expect(nb.ownership).toBe("shared");
+    expect(nb.sources[0].title).toBe("Untitled");
+  });
+
+  it("getNotebook tolerates payload with no meta block (created_at/modified_at null)", async () => {
+    // Same unwrap requirement: a notebook id containing '-' at d[0][2].
+    mockBatchexecute({
+      [RPC_IDS.GET_NOTEBOOK]: [
+        ["NB-Title", [], "nb-without-meta"],
+      ],
+    });
+    const nb = await new NotebookLMClient(tokens).getNotebook("nb-without-meta");
+    expect(nb.created_at).toBeNull();
+    expect(nb.modified_at).toBeNull();
+    expect(nb.is_shared).toBe(false);
+    expect(nb.ownership).toBe("shared");
+  });
+
+  it("getNotebook skips non-array source rows and ones with falsy s[0]", async () => {
+    mockBatchexecute({
+      [RPC_IDS.GET_NOTEBOOK]: [
+        ["NB-Title", [
+          "not-an-array",
+          [null, "no-id"],
+          ["good-id", "Good", null, 1],
+        ], "nb-sparse"],
+      ],
+    });
+    const nb = await new NotebookLMClient(tokens).getNotebook("nb-sparse");
+    expect(nb.sources).toHaveLength(1);
+    expect(nb.sources[0].id).toBe("good-id");
+  });
+
+  it("getNotebook applies d[2] || '' fallback when id is undefined", async () => {
+    // Send an outer wrapper whose inner d[0][2] does NOT contain '-' so the
+    // unwrap heuristic doesn't fire. Then d itself is the wrapper, d[2] is
+    // undefined → the `|| ""` fallback runs.
+    mockBatchexecute({
+      [RPC_IDS.GET_NOTEBOOK]: [["T", []]],
+    });
+    const nb = await new NotebookLMClient(tokens).getNotebook("any");
+    expect(nb.id).toBe("");
+  });
+
+  it("getNotebook tolerates d[1] not being an array (skips source parsing)", async () => {
+    mockBatchexecute({
+      [RPC_IDS.GET_NOTEBOOK]: [
+        ["NB-Title", "not-an-array-sources", "nb-noarr", null, null,
+         [1, false, 0, null, null, null, null, null, [1], null, null, [1]]],
+      ],
+    });
+    const nb = await new NotebookLMClient(tokens).getNotebook("nb-noarr");
+    expect(nb.sources).toEqual([]);
+  });
+
+  it("listNotebooks skips non-array items in result[0]", async () => {
+    const valid = [
+      "NB-1", [], "nb-id-good", null, null,
+      [1, false, 0, null, null, null, null, null, [1], null, null, [1]],
+    ];
+    mockBatchexecute({ [RPC_IDS.LIST_NOTEBOOKS]: [[ "not-array-item", valid ]] });
+    const list = await new NotebookLMClient(tokens).listNotebooks();
+    expect(list).toHaveLength(1);
+    expect(list[0].id).toBe("nb-id-good");
+  });
+
   it("parseNotebook throws on non-array input", async () => {
     mockBatchexecute({ [RPC_IDS.GET_NOTEBOOK]: "not-array" as any });
     await expect(new NotebookLMClient(tokens).getNotebook("n1")).rejects.toThrow(
@@ -236,6 +315,75 @@ describe("source RPCs", () => {
     mockBatchexecute({ [RPC_IDS.GET_SOURCE_GUIDE]: [] });
     const g = await new NotebookLMClient(tokens).getSourceGuide("s1", "n1");
     expect(g).toEqual({ summary: "", keywords: [] });
+  });
+
+  it("addUrlSource applies defensive fallbacks when the API returns sparse source data", async () => {
+    // source?.[0] is missing → String(source?.[0] || "") fallback fires.
+    // source?.[1] missing → title falls back to the input URL.
+    mockBatchexecute({ [RPC_IDS.ADD_SOURCE]: [[[null, null]]] });
+    const s = await new NotebookLMClient(tokens).addUrlSource("n1", "https://example.com");
+    expect(s.id).toBe("");
+    expect(s.title).toBe("https://example.com");
+  });
+
+  it("addUrlSource unwraps id when API returns it as a nested array", async () => {
+    // source[0] is an array → the Array.isArray(...) ? source[0][0] : ... branch.
+    mockBatchexecute({ [RPC_IDS.ADD_SOURCE]: [[[["nested-id"], "T"]]] });
+    const s = await new NotebookLMClient(tokens).addUrlSource("n1", "https://example.com");
+    expect(s.id).toBe("nested-id");
+  });
+
+  it("addTextSource applies defensive fallbacks when API returns sparse data", async () => {
+    mockBatchexecute({ [RPC_IDS.ADD_SOURCE]: [[[null, null]]] });
+    const s = await new NotebookLMClient(tokens).addTextSource("n1", "body", "Title");
+    expect(s.id).toBe("");
+    expect(s.title).toBe("Title");
+  });
+
+  it("addTextSource unwraps id when API returns it as a nested array", async () => {
+    mockBatchexecute({ [RPC_IDS.ADD_SOURCE]: [[[["nested-text-id"], "T"]]] });
+    const s = await new NotebookLMClient(tokens).addTextSource("n1", "body", "T");
+    expect(s.id).toBe("nested-text-id");
+  });
+
+  it("addDriveSource applies defensive fallbacks when API returns sparse data", async () => {
+    mockBatchexecute({ [RPC_IDS.ADD_SOURCE]: [[[null, null]]] });
+    const s = await new NotebookLMClient(tokens).addDriveSource(
+      "n1",
+      "doc-id",
+      "Doc",
+      "application/vnd.google-apps.document",
+    );
+    expect(s.id).toBe("");
+    expect(s.title).toBe("Doc");
+  });
+
+  it("addDriveSource unwraps id when API returns it as a nested array", async () => {
+    mockBatchexecute({ [RPC_IDS.ADD_SOURCE]: [[[["nested-drive-id"], "T"]]] });
+    const s = await new NotebookLMClient(tokens).addDriveSource(
+      "n1",
+      "doc-id",
+      "Doc",
+      "application/vnd.google-apps.document",
+    );
+    expect(s.id).toBe("nested-drive-id");
+  });
+
+  it("getSource unwraps type code when API returns meta[3] as an array", async () => {
+    mockBatchexecute({
+      [RPC_IDS.GET_SOURCE]: [["s1", "Title", null, [null, 5]], null, null, null],
+    });
+    const s = await new NotebookLMClient(tokens).getSource("s1", "n1");
+    expect(s.title).toBe("Title");
+  });
+
+  it("getSource falls back when meta type is not an array (uses raw code)", async () => {
+    // meta[3] is a single number, not an array → meta?.[3] branch (else) runs.
+    mockBatchexecute({
+      [RPC_IDS.GET_SOURCE]: [["s1", "Title", null, 1], null, null, null],
+    });
+    const s = await new NotebookLMClient(tokens).getSource("s1", "n1");
+    expect(s.title).toBe("Title");
   });
 
   it("checkFreshness returns true / false", async () => {
@@ -483,6 +631,55 @@ describe("research RPCs", () => {
       new NotebookLMClient(tokens).importResearch("n1", "t1", [0, 2]),
     ).resolves.toBeUndefined();
   });
+
+  it("importResearch defaults indices to null when omitted", async () => {
+    mockBatchexecute({ [RPC_IDS.IMPORT_RESEARCH]: [] });
+    await expect(
+      new NotebookLMClient(tokens).importResearch("n1", "t1"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("startResearch fast mode defaults taskId to empty when API returns []", async () => {
+    mockBatchexecute({ [RPC_IDS.START_FAST_RESEARCH]: [] });
+    const r = await new NotebookLMClient(tokens).startResearch("n1", "q", "web", "fast");
+    expect(r.taskId).toBe("");
+  });
+
+  it("pollResearch applies defensive fallbacks for missing fields", async () => {
+    mockBatchexecute({
+      [RPC_IDS.POLL_RESEARCH]: [[
+        ["task-x", [
+          null,
+          null, // query missing → ""
+          null,
+          [[ [null, null, null, null] ], null], // source with no title / no type code
+          99, // unknown status → statusMap fallback "in_progress"
+        ]],
+      ]],
+    });
+    const results = await new NotebookLMClient(tokens).pollResearch("n1");
+    expect(results).toHaveLength(1);
+    expect(results[0].status).toBe("in_progress");
+    expect(results[0].query).toBe("");
+    expect(results[0].sources[0].title).toBe("");
+  });
+
+  it("pollResearch skips non-array source rows", async () => {
+    mockBatchexecute({
+      [RPC_IDS.POLL_RESEARCH]: [[
+        ["task-y", [
+          null,
+          ["q"],
+          null,
+          [["not-an-array-source", ["https://x", "Title", "desc", 1]], null],
+          2,
+        ]],
+      ]],
+    });
+    const r = await new NotebookLMClient(tokens).pollResearch("n1");
+    expect(r[0].sources).toHaveLength(1);
+    expect(r[0].sources[0].url).toBe("https://x");
+  });
 });
 
 describe("studio create RPCs", () => {
@@ -533,6 +730,64 @@ describe("studio create RPCs", () => {
     expect(id).toBe("art");
   });
 
+  it("createReport uses empty custom_prompt fallback when 'Create Your Own' selected without prompt", async () => {
+    mockBatchexecute({ [RPC_IDS.CREATE_STUDIO]: ["art"] });
+    const id = await new NotebookLMClient(tokens).createReport("n1", ["s1"], {
+      report_format: "Create Your Own",
+    });
+    expect(id).toBe("art");
+  });
+
+  it("createMindMap defaults title to null when omitted", async () => {
+    mockBatchexecute({
+      [RPC_IDS.GENERATE_MIND_MAP]: [{ nodes: [] }],
+      [RPC_IDS.SAVE_MIND_MAP]: ["mind-art"],
+    });
+    const id = await new NotebookLMClient(tokens).createMindMap("n1", ["s1"]);
+    expect(id).toBe("mind-art");
+  });
+
+  it("createDataTable accepts undefined language", async () => {
+    mockBatchexecute({ [RPC_IDS.CREATE_STUDIO]: ["art"] });
+    const id = await new NotebookLMClient(tokens).createDataTable("n1", ["s1"], "rows");
+    expect(id).toBe("art");
+  });
+
+  it.each([
+    "createAudioOverview",
+    "createVideoOverview",
+    "createInfographic",
+    "createSlideDeck",
+    "createFlashcards",
+    "createReport",
+  ] as const)("%s defaults to empty string when RPC returns []", async (method) => {
+    mockBatchexecute({ [RPC_IDS.CREATE_STUDIO]: [] });
+    const c = new NotebookLMClient(tokens);
+    const id = await (c as any)[method]("n1", ["s1"]);
+    expect(id).toBe("");
+  });
+
+  it("createMindMap defaults to empty string when SAVE_MIND_MAP returns []", async () => {
+    mockBatchexecute({
+      [RPC_IDS.GENERATE_MIND_MAP]: [{}],
+      [RPC_IDS.SAVE_MIND_MAP]: [],
+    });
+    const id = await new NotebookLMClient(tokens).createMindMap("n1", ["s1"]);
+    expect(id).toBe("");
+  });
+
+  it("createQuiz defaults to empty string when RPC returns []", async () => {
+    mockBatchexecute({ [RPC_IDS.CREATE_STUDIO]: [] });
+    const id = await new NotebookLMClient(tokens).createQuiz("n1", ["s1"]);
+    expect(id).toBe("");
+  });
+
+  it("createDataTable defaults to empty string when RPC returns []", async () => {
+    mockBatchexecute({ [RPC_IDS.CREATE_STUDIO]: [] });
+    const id = await new NotebookLMClient(tokens).createDataTable("n1", ["s1"], "rows");
+    expect(id).toBe("");
+  });
+
   it("createQuiz passes question_count", async () => {
     mockBatchexecute({ [RPC_IDS.CREATE_STUDIO]: ["art"] });
     const id = await new NotebookLMClient(tokens).createQuiz("n1", ["s1"], 7, "hard");
@@ -568,6 +823,21 @@ describe("studio create RPCs", () => {
     expect(await new NotebookLMClient(tokens).pollStudio("n1")).toEqual([]);
   });
 
+  it("pollStudio applies item-level defensive fallbacks", async () => {
+    // Top-level data[0] is NOT an array (string) → items = data branch fires.
+    // Items have null id / null type → "" / 'unknown' / null fallbacks fire.
+    mockBatchexecute({
+      [RPC_IDS.POLL_STUDIO]: [
+        "scalar-not-array",
+        [null, "T", null, null, null, null],
+      ],
+    });
+    const arts = await new NotebookLMClient(tokens).pollStudio("n1");
+    expect(arts).toHaveLength(1);
+    expect(arts[0].id).toBe("");
+    expect(arts[0].download_url).toBeNull();
+  });
+
   it("deleteStudio completes", async () => {
     mockBatchexecute({ [RPC_IDS.DELETE_STUDIO]: [] });
     await expect(new NotebookLMClient(tokens).deleteStudio("n1", "a1")).resolves.toBeUndefined();
@@ -591,6 +861,264 @@ describe("chat + refresh", () => {
     mockBatchexecute();
     const c = new NotebookLMClient({ ...tokens, csrf_token: "", session_id: "" });
     await expect(c.refreshAuth()).resolves.toBeUndefined();
+  });
+
+  it("refreshAuth logs warnings when CSRF/SID extraction returns null", async () => {
+    const authMod = await import("../auth.js");
+    (authMod.extractCsrfFromPage as any).mockReturnValueOnce(null);
+    (authMod.extractSessionIdFromPage as any).mockReturnValueOnce(null);
+    mockBatchexecute();
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const c = new NotebookLMClient({ ...tokens, csrf_token: "", session_id: "" });
+    await c.refreshAuth();
+    const logged = errSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(logged).toMatch(/Failed to extract CSRF token/);
+    expect(logged).toMatch(/Failed to extract Session ID/);
+    errSpy.mockRestore();
+  });
+
+  it("query triggers refreshAuthTokens when csrfToken/sessionId initially empty", async () => {
+    const queryBody = `)]}'\n\n${JSON.stringify([
+      ["wrb.fr", "q", JSON.stringify([["A", null, 1, null, null, null, null, null, null, null, "c"]]), null, null, null, "generic"],
+    ]).length}\n${JSON.stringify([
+      ["wrb.fr", "q", JSON.stringify([["A", null, 1, null, null, null, null, null, null, null, "c"]]), null, null, null, "generic"],
+    ])}`;
+    mockBatchexecute({}, { queryBody });
+    const authMod = await import("../auth.js");
+    const c = new NotebookLMClient({ ...tokens, csrf_token: "", session_id: "" });
+    const r = await c.query("nb-1", "ask");
+    expect(r.answer).toBe("A");
+    // refreshAuthTokens must have parsed the landing page at least once.
+    expect(authMod.extractCsrfFromPage).toHaveBeenCalled();
+  });
+
+  it("execute() triggers refreshAuthTokens when csrf/session initially empty", async () => {
+    mockBatchexecute({ [RPC_IDS.LIST_NOTEBOOKS]: null });
+    const authMod = await import("../auth.js");
+    (authMod.extractCsrfFromPage as any).mockClear();
+    const c = new NotebookLMClient({ ...tokens, csrf_token: "", session_id: "" });
+    await c.listNotebooks();
+    expect(authMod.extractCsrfFromPage).toHaveBeenCalled();
+  });
+
+  it("extractRpcResult tolerates non-array chunks and non-array items", async () => {
+    server.use(
+      http.post(`${BASE_URL}${BATCHEXECUTE_PATH}`, () => {
+        // Emit multiple framed envelopes: a scalar chunk, a chunk with a non-array item,
+        // an item that's too short, and finally the real success bundle.
+        const successBundle = JSON.stringify([
+          ["wrb.fr", RPC_IDS.LIST_NOTEBOOKS, JSON.stringify([[["NB-Title", [], "nb-x", null, null, [1, false, 8, null, null, null, null, null, [1], null, null, [1]]]]]), null, null, null, "generic"],
+        ]);
+        const scalarChunk = JSON.stringify("scalar");
+        const chunkWithBadItem = JSON.stringify(["non-array-item"]);
+        const chunkWithShortItem = JSON.stringify([["wrb.fr"]]); // length < 3
+        const bodyText = [scalarChunk, chunkWithBadItem, chunkWithShortItem, successBundle]
+          .map((s) => `${s.length}\n${s}`)
+          .join("\n");
+        const body = `)]}'\n\n${bodyText}`;
+        return HttpResponse.text(body);
+      }),
+      http.get(`${BASE_URL}`, () => HttpResponse.text("<html></html>")),
+    );
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const out = await new NotebookLMClient(tokens).listNotebooks();
+    expect(out).toHaveLength(1);
+    warn.mockRestore();
+  });
+
+  it("extractRpcResult records af.httprm session id when present in response", async () => {
+    // Hand-craft a response where the envelope includes an af.httprm item
+    // that should trigger AuthState.recordSessionId.
+    server.use(
+      http.post(`${BASE_URL}${BATCHEXECUTE_PATH}`, () => {
+        const payload = [
+          ["af.httprm", null, "new-session-from-google"],
+          [
+            "wrb.fr",
+            RPC_IDS.LIST_NOTEBOOKS,
+            JSON.stringify([[["Notebook", [], "nb-x", null, null, [1, false, 8, null, null, null, null, null, [1], null, null, [1]]]]]),
+            null, null, null, "generic",
+          ],
+        ];
+        const json = JSON.stringify(payload);
+        return HttpResponse.text(`)]}'\n\n${json.length}\n${json}`);
+      }),
+      http.get(`${BASE_URL}`, () => HttpResponse.text("<html></html>")),
+    );
+    const authMod = await import("../auth.js");
+    (authMod.saveTokens as any).mockClear();
+    const c = new NotebookLMClient(tokens);
+    const out = await c.listNotebooks();
+    expect(out).toHaveLength(1);
+    // saveTokens runs as part of AuthState.recordSessionId persistence.
+    expect(authMod.saveTokens).toHaveBeenCalled();
+  });
+
+  it("extractRpcResult returns raw string when wrb.fr payload is not valid JSON", async () => {
+    server.use(
+      http.post(`${BASE_URL}${BATCHEXECUTE_PATH}`, () => {
+        // resultStr is a non-JSON string — the catch branch returns it raw.
+        const payload = [["wrb.fr", RPC_IDS.GET_SUMMARY, "raw-not-json", null, null, null, "generic"]];
+        const json = JSON.stringify(payload);
+        return HttpResponse.text(`)]}'\n\n${json.length}\n${json}`);
+      }),
+      http.get(`${BASE_URL}`, () => HttpResponse.text("<html></html>")),
+    );
+    const c = new NotebookLMClient(tokens);
+    // describeNotebook returns data?.[0] || "" from the parsed result;
+    // when result is the raw string "raw-not-json", data[0] is "r".
+    const out = await c.describeNotebook("n1");
+    expect(out).toBe("r");
+  });
+
+  it("extractRpcResult returns null when no wrb.fr envelope matches", async () => {
+    server.use(
+      http.post(`${BASE_URL}${BATCHEXECUTE_PATH}`, () => {
+        // No wrb.fr item at all — extractRpcResult should fall through to return null.
+        const json = JSON.stringify([[["wrb.fr", "different.rpc.id", "{}", null, null, null, "generic"]]]);
+        return HttpResponse.text(`)]}'\n\n${json.length}\n${json}`);
+      }),
+      http.get(`${BASE_URL}`, () => HttpResponse.text("<html></html>")),
+    );
+    const c = new NotebookLMClient(tokens);
+    const out = await c.listNotebooks();
+    expect(out).toEqual([]);
+  });
+
+  it("extractRpcResult returns non-string resultStr unchanged (line 100)", async () => {
+    server.use(
+      http.post(`${BASE_URL}${BATCHEXECUTE_PATH}`, () => {
+        // resultStr is null (not a string) — the function returns it directly.
+        const payload = [["wrb.fr", RPC_IDS.LIST_NOTEBOOKS, null, null, null, null, "generic"]];
+        const json = JSON.stringify(payload);
+        return HttpResponse.text(`)]}'\n\n${json.length}\n${json}`);
+      }),
+      http.get(`${BASE_URL}`, () => HttpResponse.text("<html></html>")),
+    );
+    const c = new NotebookLMClient(tokens);
+    const out = await c.listNotebooks();
+    expect(out).toEqual([]);
+  });
+
+  it("query body omits at= and f.sid= when AuthState has no csrf/sid", async () => {
+    const authMod = await import("../auth.js");
+    // After refreshAuthTokens, both extracts return null → state stays empty.
+    (authMod.extractCsrfFromPage as any).mockReturnValueOnce(null);
+    (authMod.extractSessionIdFromPage as any).mockReturnValueOnce(null);
+
+    let capturedBody = "";
+    const okBody = JSON.stringify([
+      ["wrb.fr", "q", JSON.stringify([["ans", null, 1, null, null, null, null, null, null, null, "c"]]), null, null, null, "generic"],
+    ]);
+    server.use(
+      http.post(`${BASE_URL}${QUERY_PATH}`, async ({ request }) => {
+        capturedBody = await request.text();
+        return HttpResponse.text(`)]}'\n\n${okBody.length}\n${okBody}`);
+      }),
+      http.get(`${BASE_URL}`, () => HttpResponse.text("<html></html>")),
+    );
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const c = new NotebookLMClient({ ...tokens, csrf_token: "", session_id: "" });
+    await c.query("nb-1", "ask");
+    expect(capturedBody.startsWith("f.req=")).toBe(true);
+    expect(capturedBody).not.toContain("at=");
+    expect(capturedBody).not.toContain("f.sid=");
+    errSpy.mockRestore();
+  });
+
+  it("query rethrows non-auth, non-abort errors directly", async () => {
+    server.use(
+      http.post(`${BASE_URL}${QUERY_PATH}`, () =>
+        // 500 surfaces as a thrown Error (not AuthenticationError, not AbortError).
+        new HttpResponse(null, { status: 500, statusText: "Server Error" }),
+      ),
+      http.get(`${BASE_URL}`, () => HttpResponse.text("<html></html>")),
+    );
+    const c = new NotebookLMClient(tokens);
+    await expect(c.query("nb-1", "ask")).rejects.toThrow(/HTTP 500/);
+  });
+
+  it("query tolerates non-array chunks / items / non-wrb.fr items in the response", async () => {
+    // Hand-craft a parsed response with multiple defensive branches:
+    //  - one non-array chunk (parseResponse returns it from a stray JSON line)
+    //  - one chunk containing a non-array item
+    //  - one wrb.fr item with non-string resultStr (number)
+    //  - one wrb.fr item with non-JSON resultStr (parse throws)
+    //  - one wrb.fr item with a short answer (shorter than bestAnswer)
+    //  - one wrb.fr item whose data shape is array-but-data[0]-not-array
+    //  - the final wrb.fr item carries the longest answer + convId.
+    const okPayload = JSON.stringify([
+      ["short", null, 1, null, null, null, null, null, null, null, "conv-final"],
+    ]);
+    const wrbBundles = [
+      "non-array-chunk",
+      [["not-an-item-array"]],
+      [["af.httprm", null, "ignored-by-query"]], // non-wrb.fr item — query loop should skip
+      [["wrb.fr", "q", 12345, null, null, null, "generic"]],
+      [["wrb.fr", "q", "not-valid-json{", null, null, null, "generic"]],
+      [["wrb.fr", "q", JSON.stringify("scalar-shape"), null, null, null, "generic"]],
+      [["wrb.fr", "q", JSON.stringify([["x", null, 1, null, null, null, null, null, null, null, null]]), null, null, null, "generic"]],
+      [["wrb.fr", "q", JSON.stringify([["longest-answer", null, 1, null, null, null, null, null, null, null, "conv-final"]]), null, null, null, "generic"]],
+      [["wrb.fr", "q", okPayload, null, null, null, "generic"]],
+    ];
+    // Frame each bundle individually so parseResponse emits separate chunks.
+    const framed = wrbBundles
+      .map((b) => {
+        const json = JSON.stringify(b);
+        return `${json.length}\n${json}`;
+      })
+      .join("\n");
+    const body = `)]}'\n\n${framed}`;
+    server.use(
+      http.post(`${BASE_URL}${QUERY_PATH}`, () => HttpResponse.text(body)),
+      http.get(`${BASE_URL}`, () => HttpResponse.text("<html></html>")),
+    );
+    // Silence parseResponse's warn on the non-array chunk.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const r = await new NotebookLMClient(tokens).query("nb-1", "ask");
+    expect(r.answer).toBe("longest-answer");
+    warn.mockRestore();
+  });
+
+  it("query does NOT record history when convId is present but answer is empty", async () => {
+    // Answer="" means bestAnswer never updates → `if (convId && bestAnswer)` is false.
+    const body = `)]}'\n\n${(() => {
+      const bundle = JSON.stringify([
+        ["wrb.fr", "q", JSON.stringify([["", null, 1, null, null, null, null, null, null, null, "conv-zero"]]), null, null, null, "generic"],
+      ]);
+      return `${bundle.length}\n${bundle}`;
+    })()}`;
+    server.use(
+      http.post(`${BASE_URL}${QUERY_PATH}`, () => HttpResponse.text(body)),
+      http.get(`${BASE_URL}`, () => HttpResponse.text("<html></html>")),
+    );
+    const c = new NotebookLMClient(tokens);
+    const r = await c.query("nb-1", "ask");
+    expect(r.answer).toBe("");
+    // conversation_id is still surfaced from inner[10].
+    expect(r.conversation_id).toBe("conv-zero");
+  });
+
+  it("query reuses prior conversation history when conversationId provided", async () => {
+    // First turn populates the history map; the second turn re-uses it.
+    const buildBody = (answer: string, conv: string) => {
+      const bundle = JSON.stringify([
+        ["wrb.fr", "q", JSON.stringify([[answer, null, 1, null, null, null, null, null, null, null, conv]]), null, null, null, "generic"],
+      ]);
+      return `)]}'\n\n${bundle.length}\n${bundle}`;
+    };
+    let turn = 0;
+    server.use(
+      http.post(`${BASE_URL}${QUERY_PATH}`, () => {
+        turn++;
+        return HttpResponse.text(buildBody(turn === 1 ? "first" : "second", "conv-keep"));
+      }),
+      http.get(`${BASE_URL}`, () => HttpResponse.text("<html></html>")),
+    );
+    const c = new NotebookLMClient(tokens);
+    const r1 = await c.query("nb-1", "q1");
+    const r2 = await c.query("nb-1", "q2", undefined, r1.conversation_id ?? undefined);
+    expect(r2.answer).toBe("second");
   });
 });
 

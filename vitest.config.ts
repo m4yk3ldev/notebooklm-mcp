@@ -12,12 +12,13 @@ export default defineConfig({
         "src/vendor.d.ts",
         "src/types.ts",
       ],
-      // Floor current baseline so regressions fail CI loud.
+      // Coverage must remain at 100% across the board. Any regression
+      // (a new uncovered line / branch / function) should fail CI loud.
       thresholds: {
-        statements: 95,
-        branches: 80,
-        functions: 96,
-        lines: 95,
+        statements: 100,
+        branches: 100,
+        functions: 100,
+        lines: 100,
       },
     },
   },

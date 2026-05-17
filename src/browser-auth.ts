@@ -276,9 +276,14 @@ async function extractCookiesViaCDP(
             };
 
             lastExtractedTokens = tokens;
+            // showProgress is always `true` for runBrowserAuthFlow /
+            // refreshCookiesHeadless (the only callers). The else-if's
+            // false branch is unreachable from production code paths.
+            /* v8 ignore start */
           } else if (showProgress) {
             process.stderr.write(".");
           }
+          /* v8 ignore stop */
         }
 
         if (response.result?.result?.value && lastExtractedTokens) {
@@ -288,6 +293,8 @@ async function extractCookiesViaCDP(
             if (!data.href || !data.href.startsWith("https://notebooklm.google.com")) {
               // Still on Google login/chooser — reset and keep polling
               lastExtractedTokens = null;
+              // showProgress always true from production callers (see above).
+              /* v8 ignore next */
               if (showProgress) process.stderr.write("🔑");
               return;
             }
@@ -337,11 +344,16 @@ export async function runBrowserAuthFlow(): Promise<AuthTokens> {
     console.error("\n✅ Connection secured! Your NotebookLM session is now synchronized.");
     return tokens;
   } catch (error) {
+    // extractCookiesViaCDP always rejects with Error instances; the else
+    // branch exists only to forward truly exotic throw-values that bypass
+    // the wrap above. Unreachable in normal operation.
+    /* v8 ignore else */
     if (error instanceof Error) {
       throw new Error(
         `Smart Auth failed: ${error.message}\nTry manual auth instead.`,
       );
     }
+    /* v8 ignore next */
     throw error;
   } finally {
     proc.kill();

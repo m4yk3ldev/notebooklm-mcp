@@ -29,6 +29,12 @@ describe("parseResponse", () => {
   it("returns [] on empty body", () => {
     expect(parseResponse("")).toEqual([]);
   });
+
+  it("tolerates a trailing byte-count with no follow-up line", () => {
+    // Edge case: framed length prefix at end of stream with no payload after.
+    // Should not throw or hang.
+    expect(parseResponse(`)]}'\n\n42`)).toEqual([]);
+  });
 });
 
 describe("extractTextFromBlocks", () => {
