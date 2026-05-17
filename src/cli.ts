@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -5,13 +6,19 @@ import { createServer } from "./server.js";
 import { runAuthFlow, runFileImport, showTokens } from "./auth.js";
 import { runBrowserAuthFlow } from "./browser-auth.js";
 
+function readPackageVersion(): string {
+  const pkgUrl = new URL("../package.json", import.meta.url);
+  const pkg = JSON.parse(readFileSync(pkgUrl, "utf8")) as { version: string };
+  return pkg.version;
+}
+
 export function buildProgram(): Command {
   const program = new Command();
 
   program
     .name("notebooklm-mcp")
     .description("MCP server for Google NotebookLM")
-    .version("0.1.24");
+    .version(readPackageVersion());
 
   program
     .command("serve")
