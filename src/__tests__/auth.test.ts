@@ -157,6 +157,23 @@ describe("loadTokensFromCache / saveTokens", () => {
     saveTokens(tokens);
     expect(loadTokensFromCache()).toEqual(tokens);
   });
+
+  it("writes auth.json with mode 0600 and config dir with mode 0700", async () => {
+    const tokens = {
+      cookies: { SID: "a", HSID: "b", SSID: "c", APISID: "d", SAPISID: "e" },
+      csrf_token: "t",
+      session_id: "s",
+      extracted_at: 1700000000,
+    };
+    const { saveTokens } = await importAuth();
+    saveTokens(tokens);
+    const { statSync } = await import("node:fs");
+    const dirMode = statSync(join(tempHome, ".notebooklm-mcp")).mode & 0o777;
+    const fileMode =
+      statSync(join(tempHome, ".notebooklm-mcp", "auth.json")).mode & 0o777;
+    expect(dirMode).toBe(0o700);
+    expect(fileMode).toBe(0o600);
+  });
 });
 
 describe("showTokens", () => {

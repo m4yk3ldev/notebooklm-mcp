@@ -43,8 +43,11 @@ export function extractSessionIdFromPage(html: string): string | null {
 }
 
 export function saveTokens(tokens: AuthTokens): void {
-  mkdirSync(CONFIG_DIR, { recursive: true });
-  writeFileSync(AUTH_FILE, JSON.stringify(tokens, null, 2), "utf-8");
+  mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
+  writeFileSync(AUTH_FILE, JSON.stringify(tokens, null, 2), {
+    encoding: "utf-8",
+    mode: 0o600,
+  });
 }
 
 export function loadTokensFromCache(): AuthTokens | null {

@@ -94,7 +94,7 @@ export async function launchChrome(headless: boolean) {
   }
 
   const userDataDir = join(homedir(), ".notebooklm-mcp", "chrome-profile");
-  mkdirSync(userDataDir, { recursive: true });
+  mkdirSync(userDataDir, { recursive: true, mode: 0o700 });
 
   const args = [
     `--remote-debugging-port=${CDP_PORT}`,
