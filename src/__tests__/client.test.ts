@@ -164,4 +164,64 @@ describe("NotebookLMClient", () => {
     expect(response.conversation_id).toBe("conv-123");
     expect(refreshCookiesHeadless).toHaveBeenCalled();
   });
+
+  it("shares one refresh across concurrent failing requests (mutex)", async () => {
+    let listCalls = 0;
+
+    server.use(
+      http.post(`${BASE_URL}${BATCHEXECUTE_PATH}`, ({ request }) => {
+        const url = new URL(request.url);
+        const rpcId = url.searchParams.get("rpcids");
+        if (rpcId === RPC_IDS.LIST_NOTEBOOKS) {
+          listCalls++;
+          // First call from each concurrent caller fails with auth error.
+          // listCalls 1+2 = the two parallel original requests.
+          // listCalls 3+ = retries after refresh succeed.
+          if (listCalls <= 2) {
+            const bundle = ["wrb.fr", RPC_IDS.LIST_NOTEBOOKS, null, null, null, [16], "generic"];
+            const json = JSON.stringify([bundle]);
+            return HttpResponse.text(`)]}'\n\n${json.length}\n${json}`);
+          }
+          const ok = [
+            "wrb.fr",
+            RPC_IDS.LIST_NOTEBOOKS,
+            JSON.stringify([[["NB", [], "id", null, null, [1, false, 8, null, null, null, null, null, [1], null, null, [1]]]]]),
+            null, null, null, "generic",
+          ];
+          const json = JSON.stringify([ok]);
+          return HttpResponse.text(`)]}'\n\n${json.length}\n${json}`);
+        }
+        if (rpcId === RPC_IDS.SETTINGS) {
+          const ok = ["wrb.fr", RPC_IDS.SETTINGS, JSON.stringify([null, 1]), null, null, null, "generic"];
+          const json = JSON.stringify([ok]);
+          return HttpResponse.text(`)]}'\n\n${json.length}\n${json}`);
+        }
+        return HttpResponse.text("<html>CSRF</html>");
+      }),
+      http.get(`${BASE_URL}`, () => HttpResponse.text("<html>CSRF</html>")),
+    );
+
+    let refreshes = 0;
+    (refreshCookiesHeadless as any).mockImplementation(async () => {
+      refreshes++;
+      // small delay so two concurrent callers both reach the mutex before resolve.
+      await new Promise((r) => setTimeout(r, 30));
+      return {
+        cookies: { SID: "new" },
+        csrf_token: "new-csrf",
+        session_id: "new-sid",
+        extracted_at: Date.now() / 1000,
+      };
+    });
+
+    const client = new NotebookLMClient(mockTokens);
+    const [a, b] = await Promise.all([client.listNotebooks(), client.listNotebooks()]);
+
+    expect(a).toHaveLength(1);
+    expect(b).toHaveLength(1);
+    // Two original failing requests + (at least) two retries → ≥4 list calls.
+    expect(listCalls).toBeGreaterThanOrEqual(4);
+    // The mutex guarantees only one refresh ran despite two parallel auth failures.
+    expect(refreshes).toBe(1);
+  });
 });

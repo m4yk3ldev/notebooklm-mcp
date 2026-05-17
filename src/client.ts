@@ -59,6 +59,12 @@ export class NotebookLMClient {
   private conversationHistory: Map<string, unknown[]> = new Map();
   private queryTimeout: number;
   private reqId = 0;
+  // Shared in-flight auth-refresh promise. When several concurrent RPCs
+  // all hit AuthenticationError, only the first one spawns a headless
+  // Chrome / manual browser flow; the rest await the same result. Without
+  // this guard, every concurrent caller would launch its own browser and
+  // race to overwrite this.tokens with potentially different cookie sets.
+  private authRefreshPromise: Promise<AuthTokens> | null = null;
 
   constructor(tokens: AuthTokens, queryTimeout?: number) {
     this.tokens = tokens;
@@ -275,13 +281,7 @@ export class NotebookLMClient {
 
           console.error("🔄 Effortlessly restoring your connection in the background...");
           try {
-            let newTokens: AuthTokens;
-            try {
-              newTokens = await refreshCookiesHeadless();
-            } catch (refreshError) {
-              console.error("⚠️ Automatic refresh encountered a hiccup. Launching a manual login window to get you back on track.");
-              newTokens = await runBrowserAuthFlow();
-            }
+            const newTokens = await this.refreshAuthOnce();
 
             this.tokens = newTokens;
             this.csrfToken = newTokens.csrf_token;
@@ -293,7 +293,7 @@ export class NotebookLMClient {
             } catch {
               // ignore warmup error
             }
-            
+
             await new Promise(r => setTimeout(r, 1000));
 
             // Retry original request
@@ -307,6 +307,27 @@ export class NotebookLMClient {
       }
     } finally {
       clearTimeout(timer);
+    }
+  }
+
+  private async refreshAuthOnce(): Promise<AuthTokens> {
+    if (this.authRefreshPromise) {
+      return this.authRefreshPromise;
+    }
+    this.authRefreshPromise = (async () => {
+      try {
+        return await refreshCookiesHeadless();
+      } catch {
+        console.error(
+          "⚠️ Automatic refresh encountered a hiccup. Launching a manual login window to get you back on track.",
+        );
+        return await runBrowserAuthFlow();
+      }
+    })();
+    try {
+      return await this.authRefreshPromise;
+    } finally {
+      this.authRefreshPromise = null;
     }
   }
 
@@ -825,13 +846,7 @@ export class NotebookLMClient {
 
         console.error("🔄 Effortlessly restoring your connection in the background...");
         try {
-          let newTokens: AuthTokens;
-          try {
-            newTokens = await refreshCookiesHeadless();
-          } catch (refreshError) {
-            console.error("⚠️ Automatic refresh encountered a hiccup. Launching a manual login window to get you back on track.");
-            newTokens = await runBrowserAuthFlow();
-          }
+          const newTokens = await this.refreshAuthOnce();
 
           this.tokens = newTokens;
           this.csrfToken = newTokens.csrf_token;
@@ -843,7 +858,7 @@ export class NotebookLMClient {
           } catch {
             // ignore warmup error
           }
-          
+
           await new Promise(r => setTimeout(r, 1000));
 
           // Retry original request
