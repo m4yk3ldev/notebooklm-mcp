@@ -10,6 +10,8 @@ Stop jumping between browser tabs. **NotebookLM MCP** brings the full analytical
 
 Manage notebooks, ingest diverse sources, trigger deep research, and generate studio-quality content—all via a single, standardized Model Context Protocol (MCP) interface.
 
+> **New to MCP?** The [Model Context Protocol](https://modelcontextprotocol.io) is a standard for connecting LLMs to external data sources and tools. This package speaks MCP over stdio — your AI client (Claude Desktop, Cursor, VS Code, etc.) spawns `notebooklm-mcp serve` as a subprocess and the two communicate over JSON-RPC. The 32 tools below become callable functions in the model's tool list.
+
 ---
 
 ## 🔥 Key Capabilities
@@ -53,13 +55,23 @@ notebooklm-mcp auth
 
 _A secure Chrome window will open. Simply log into your Google account, and we'll handle the rest. Your session is stored locally and securely._
 
+**Auth fallbacks** if automated Chrome can't run:
+
+```bash
+notebooklm-mcp auth --manual              # interactive copy/paste from your browser
+notebooklm-mcp auth --file tokens.json    # import a previously exported bundle
+notebooklm-mcp auth --show-tokens         # verify the cached session
+```
+
+For headless / CI environments, set `NOTEBOOKLM_COOKIES` (and optionally `NOTEBOOKLM_CSRF_TOKEN`, `NOTEBOOKLM_SESSION_ID`) instead of running the auth flow. Token resolution order: env var → `~/.notebooklm-mcp/auth.json` → error.
+
 ---
 
 ## 🤖 AI Assistant Integration
 
 ### Claude Desktop / Claude Code
 
-Add the following to your `mcpServers` configuration:
+Add the following to your `mcpServers` configuration (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows; for Claude Code use the `claude mcp add` CLI):
 
 ```json
 {
@@ -72,13 +84,76 @@ Add the following to your `mcpServers` configuration:
 }
 ```
 
-### Cursor / VS Code (Composer)
+Need a longer timeout for big studio jobs, or want to point at a sidecar cookie file? Pass extra flags + env:
 
-1. Navigate to **MCP Settings**.
-2. Add a new server named `NotebookLM`.
-3. Set type to `command` and enter: `npx -y @m4ykeldev/notebooklm-mcp serve`.
+```json
+{
+  "mcpServers": {
+    "notebooklm": {
+      "command": "npx",
+      "args": ["-y", "@m4ykeldev/notebooklm-mcp", "serve", "--query-timeout", "180000", "--debug"],
+      "env": {
+        "NOTEBOOKLM_COOKIES": "SID=...; HSID=...; SSID=...; APISID=...; SAPISID=..."
+      }
+    }
+  }
+}
+```
+
+### Cursor
+
+Edit `~/.cursor/mcp.json` (or per-project `.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "notebooklm": {
+      "command": "npx",
+      "args": ["-y", "@m4ykeldev/notebooklm-mcp", "serve"]
+    }
+  }
+}
+```
+
+### VS Code (GitHub Copilot Chat / Continue)
+
+Edit `.vscode/mcp.json` in your project root:
+
+```json
+{
+  "servers": {
+    "notebooklm": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@m4ykeldev/notebooklm-mcp", "serve"]
+    }
+  }
+}
+```
+
+### Verify the wiring
+
+After restarting your client, ask:
+
+> "List my NotebookLM notebooks."
+
+If the model invokes `notebook_list` and returns a table of titles, you're connected.
 
 ---
+
+## 💬 Example Prompts
+
+Once wired up, your AI can drive NotebookLM end-to-end with natural language. The model picks the right tool from the 32 below.
+
+| Goal | Sample prompt | Tools the model will call |
+|---|---|---|
+| Inventory | _"Show me every NotebookLM project I own"_ | `notebook_list` |
+| Start a project | _"Create a notebook called 'Q3 Earnings' and add the AAPL 10-Q PDF at https://…"_ | `notebook_create`, `notebook_add_url` |
+| Grounded Q&A | _"From the AAPL notebook, what is the year-over-year services revenue change?"_ | `notebook_query` |
+| Multi-source brief | _"In my 'Climate Policy' notebook, generate a one-page briefing doc focused on IRA tax credits"_ | `report_create`, `studio_status` |
+| Studio podcast | _"Make a 10-min audio overview of my 'AI Safety Reading' notebook"_ | `audio_overview_create`, `studio_status` |
+| Deep Research → import | _"Run deep research on 'kelp aquaculture in Maine' and import the findings into my 'Climate' notebook"_ | `research_start`, `research_status`, `research_import` |
+| Cleanup | _"Delete the audio overview I generated yesterday in 'AI Safety Reading'"_ | `studio_status`, `studio_delete` |
 
 ## 🛠 Complete Tool Reference (32)
 
@@ -143,11 +218,43 @@ Every tool is designed to work seamlessly within your AI's context window.
 
 ---
 
+## 🎛 CLI Reference
+
+```bash
+notebooklm-mcp serve [--query-timeout <ms>] [--debug]
+notebooklm-mcp auth  [--manual] [--file <path>] [--show-tokens]
+notebooklm-mcp --version
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `serve --query-timeout` | `120000` | Per-RPC timeout in ms. Bump for large studio jobs or slow research. |
+| `serve --debug` | off | Verbose stderr logging of every RPC + retry. |
+| `auth --manual` | off | Skip Chrome automation; paste cookies yourself. |
+| `auth --file <path>` | — | Import a previously exported tokens JSON. |
+| `auth --show-tokens` | — | Print the cached session's metadata (cookie names, age, CSRF/SID presence — never the secret values). |
+
+---
+
+## 🩹 Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| _"Could not find Google Chrome or Chromium"_ | No Chrome/Chromium on PATH | Install Chrome or run `notebooklm-mcp auth --manual` |
+| _"Authentication expired"_ inside the AI session | Cookies stale | The server auto-refreshes once; if it can't, re-run `notebooklm-mcp auth` |
+| Tool calls hang past 2 min | Big studio job over default timeout | Restart server with `--query-timeout 300000` |
+| _"file_path … outside the allowed roots"_ | `notebook_add_text` got a path outside cwd / tmp | Copy the file into your working directory or pass `content` inline |
+| MCP client reports server crashed on startup | `dist/cli.js` missing (dev clone) | `pnpm install && pnpm run build` |
+| Multiple Chrome windows pop up on concurrent failures | Older version without single-flight mutex | Upgrade to ≥ `v0.2.5` |
+
+---
+
 ## 💡 Pro Tips
 
 - **Custom Timeouts**: Working with massive sources? Increase the timeout:
-  `notebooklm-mcp serve --query-timeout 120000`
-- **Check Connections**: Use `auth --show-tokens` to verify your session validity.
+  `notebooklm-mcp serve --query-timeout 180000`
+- **Check Connections**: Use `notebooklm-mcp auth --show-tokens` to verify your session validity without exposing the secrets.
+- **CI / headless**: Set `NOTEBOOKLM_COOKIES` (plus `NOTEBOOKLM_CSRF_TOKEN`, `NOTEBOOKLM_SESSION_ID`) to skip the browser flow entirely.
 
 ---
 
