@@ -68,19 +68,22 @@ jobs:
       - uses: google/osv-scanner-action/osv-scanner-action@v2.2.4
         with:
           scan-args: |-
-            --lockfile=package-lock.json
+            --lockfile=pnpm-lock.yaml
 
   audit:
-    name: Supply-chain audit (npm)
+    name: Supply-chain audit (pnpm)
     runs-on: ubuntu-latest
     needs: [osv-scan]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with:
-          # npm >= 9.5 for `npm audit signatures`. Node 22 ships npm 10.
+          # npm >= 9.5 still required on PATH for `npm audit signatures`
+          # (pnpm has no equivalent). Node 22 ships npm 10.
           node-version: '22'
+          cache: pnpm
       - run: ./scripts/pre-release.sh
         env:
           CI: 'true'
@@ -92,12 +95,14 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
-      - run: npm ci
-      - run: npm run build
-      - run: npm test
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - run: pnpm test
 
   publish:
     name: Publish to NPM
@@ -110,18 +115,20 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
       # Do NOT pass registry-url: setup-node would write an
       # .npmrc with _authToken=${NODE_AUTH_TOKEN}, and a stale
       # NPM_TOKEN secret would sabotage OIDC. publishConfig.registry
       # in package.json already points to registry.npmjs.org.
       # Node 24 ships with npm >= 11.5.1 which supports
-      # OIDC Trusted Publishers (node 22.x bundles npm 10.x).
+      # OIDC Trusted Publishers.
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
-      - run: npm ci
-      - run: npm run build
-      - run: npm publish --access public
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - run: pnpm publish --access public --no-git-checks
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:

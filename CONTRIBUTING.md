@@ -13,26 +13,30 @@ cd notebooklm-mcp
 
 2. **Install dependencies**
 
+This repo uses **pnpm** (pinned via the `packageManager` field in `package.json`).
+Use Corepack to get the matching pnpm version automatically:
+
 ```bash
-npm install
+corepack enable
+pnpm install
 ```
 
 3. **Build**
 
 ```bash
-npm run build
+pnpm run build
 ```
 
 4. **Run in dev mode** (rebuilds on file changes)
 
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 5. **Run the test suite** (vitest + MSW)
 
 ```bash
-npm test
+pnpm test
 ```
 
 ## Project Structure
@@ -68,7 +72,7 @@ Each MCP tool maps to one or more RPC calls defined in `constants.ts`. The `clie
 1. **Fork** the repository
 2. **Create a branch** for your feature or fix: `git checkout -b feat/my-feature`
 3. **Make your changes** in the `src/` directory
-4. **Build and test** locally: `npm run build`
+4. **Build and test** locally: `pnpm run build`
 5. **Test the CLI** manually:
    ```bash
    node dist/cli.js auth --show-tokens
@@ -119,12 +123,12 @@ make release-push   # runs pre-release audit, then pushes commit + tag to origin
 `make release-push` will refuse to push if any of the following fail:
 
 1. Uncommitted changes in the working tree
-2. `npm ci` — lockfile / `package.json` drift
-3. `npm run build` — type or build errors
-4. `npm test`
-5. `npm audit --audit-level=high` — known high/critical CVEs in deps
-6. `npm audit signatures` — tampered or unsigned packages in `node_modules`
-7. `lockfile-lint` — any transitive dep resolves to a non-npm registry or non-HTTPS URL
+2. `pnpm install --frozen-lockfile` — lockfile / `package.json` drift, SHA-512 integrity
+3. `pnpm run build` — type or build errors
+4. `pnpm test`
+5. `pnpm audit --audit-level=high` — known high/critical CVEs in deps
+6. `npm audit signatures` — tampered or unsigned packages in `node_modules` (pnpm has no equivalent; npm CLI must be on PATH)
+7. `pnpm-lock.yaml` registry pinning — any transitive tarball resolves to a non-npm registry or any git/github resolution
 8. `npm pack --dry-run` — unexpected files (e.g. `src/`, `scripts/`, `.env`) in the publish manifest
 
 Emergency override (logs the bypass):

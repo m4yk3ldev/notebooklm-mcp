@@ -2,11 +2,11 @@
 #
 # Pre-release supply-chain audit.
 # Runs before `make release-push` to block tampered/vulnerable deps from
-# reaching npm. All checks are read-only except `npm ci` which reinstalls
-# from the lockfile in-place.
+# reaching npm. All checks are read-only except `pnpm install --frozen-lockfile`
+# which reinstalls from the lockfile in-place.
 #
 # Override (use sparingly, logs the override):
-#   SKIP_AUDIT_LEVEL=1   # accept high/critical npm audit findings
+#   SKIP_AUDIT_LEVEL=1   # accept high/critical pnpm audit findings
 #   SKIP_SOCKET=1        # skip optional socket scan (default: skipped)
 
 set -euo pipefail
@@ -45,51 +45,56 @@ else
   ok
 fi
 
-# 2. Clean install from lockfile — detects package.json / lockfile drift.
-step 2 "npm ci (lockfile integrity)"
-npm ci --no-audit --no-fund >/dev/null
+# 2. Frozen install from lockfile — detects package.json / lockfile drift
+#    and verifies SHA-512 integrity of every tarball against the lockfile.
+step 2 "pnpm install --frozen-lockfile (lockfile integrity)"
+pnpm install --frozen-lockfile --prefer-offline >/dev/null
 ok
 
 # 3. Build — typecheck + bundle. Catches type errors before publish.
-step 3 "npm run build"
-npm run build >/dev/null
+step 3 "pnpm build"
+pnpm run build >/dev/null
 ok
 
 # 4. Tests.
-step 4 "npm test"
-npm test --silent
+step 4 "pnpm test"
+pnpm test --silent
 ok
 
 # 5. Known-vulnerability scan. Fails on high/critical unless overridden.
-step 5 "npm audit (high+)"
+step 5 "pnpm audit (high+)"
 if [[ "${SKIP_AUDIT_LEVEL:-0}" == "1" ]]; then
-  npm audit || true
+  pnpm audit || true
   warn "SKIP_AUDIT_LEVEL=1 — high/critical findings ignored by operator"
 else
-  npm audit --audit-level=high || die "high/critical vulnerabilities found"
+  pnpm audit --audit-level=high || die "high/critical vulnerabilities found"
   ok
 fi
 
 # 6. Registry signature verification — catches tampered tarballs.
-# Available in npm >= 9.5. Verifies every installed package was signed by
-# the npm registry's Sigstore key.
+# pnpm has no native equivalent, but `npm audit signatures` reads installed
+# node_modules and queries the npm registry's Sigstore key, independent of
+# the install tool. Requires npm >= 9.5 on PATH.
 step 6 "npm audit signatures"
 npm audit signatures || die "package signature mismatch — possible tampering"
 ok
 
-# 7. Lockfile lint — pin all `resolved` URLs to https://registry.npmjs.org.
-# Blocks the classic attack of swapping a transitive dep's tarball URL.
-step 7 "lockfile-lint (HTTPS + npm registry only)"
-npx --yes lockfile-lint \
-  --path package-lock.json \
-  --type npm \
-  --validate-https \
-  --allowed-hosts npm \
-  --allowed-schemes "https:" \
-  --empty-hostname false
+# 7. Lockfile registry pinning — block transitive tarball-URL injection.
+# pnpm-lock.yaml omits `tarball:` when the resolved URL matches the default
+# registry; any explicit tarball line is an off-registry pull and must be
+# whitelisted (registry.npmjs.org) or rejected.
+step 7 "pnpm-lock.yaml registry pinning"
+BAD_TARBALL=$(grep -nE '^\s*tarball:' pnpm-lock.yaml | grep -vE 'registry\.npmjs\.org' || true)
+BAD_GIT=$(grep -nE '^\s*resolution:.*(git\+|github:)' pnpm-lock.yaml || true)
+if [[ -n "$BAD_TARBALL" || -n "$BAD_GIT" ]]; then
+  [[ -n "$BAD_TARBALL" ]] && { echo "off-registry tarball URLs:"; echo "$BAD_TARBALL"; }
+  [[ -n "$BAD_GIT" ]] && { echo "git/github resolutions:"; echo "$BAD_GIT"; }
+  die "lockfile contains off-registry or git-based resolutions"
+fi
 ok
 
 # 8. Publish preview — confirm only intended files ship.
+# `npm pack --dry-run` reads package.json#files regardless of install tool.
 step 8 "npm pack --dry-run (publish manifest preview)"
 PACK_OUT="$(npm pack --dry-run --json)"
 echo "$PACK_OUT" | node -e '

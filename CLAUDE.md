@@ -5,14 +5,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-# Install dependencies
-npm install
+# Install dependencies (pnpm pinned via packageManager field)
+corepack enable
+pnpm install
 
 # Build (outputs to dist/)
-npm run build
+pnpm run build
 
 # Watch mode for development
-npm run dev
+pnpm run dev
 
 # Run the built CLI directly
 node dist/cli.js serve
@@ -21,7 +22,7 @@ node dist/cli.js auth
 
 ```bash
 # Run the test suite (vitest + MSW)
-npm test
+pnpm test
 ```
 
 ```bash
@@ -31,7 +32,7 @@ make release-push   # supply-chain audit then push (publishes via CI on tag)
 make pre-release    # standalone audit
 ```
 
-TypeScript strict mode is the primary quality gate — fix all type errors before building. CI runs `npm test` before publishing to NPM.
+TypeScript strict mode is the primary quality gate — fix all type errors before building. CI runs `pnpm test` before publishing to NPM.
 
 ## Architecture
 
