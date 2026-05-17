@@ -173,6 +173,48 @@ describe("sourceTools", () => {
         ),
       ).rejects.toThrow(/content or file_path/);
     });
+
+    it("rejects file_path outside cwd and tmpdir (path traversal)", async () => {
+      const client = { addTextSource: vi.fn() };
+      // /etc/passwd is outside both cwd and tmpdir on every test host.
+      await expect(
+        findTool(sourceTools, "notebook_add_text").execute(
+          client,
+          { notebook_id: "n1", file_path: "/etc/passwd", title: "T" },
+          noopOpts(),
+        ),
+      ).rejects.toThrow(/outside the allowed roots/);
+      expect(client.addTextSource).not.toHaveBeenCalled();
+    });
+
+    it("rejects relative traversal that escapes cwd", async () => {
+      const client = { addTextSource: vi.fn() };
+      await expect(
+        findTool(sourceTools, "notebook_add_text").execute(
+          client,
+          {
+            notebook_id: "n1",
+            file_path: "../../../../etc/shadow",
+            title: "T",
+          },
+          noopOpts(),
+        ),
+      ).rejects.toThrow(/outside the allowed roots/);
+      expect(client.addTextSource).not.toHaveBeenCalled();
+    });
+
+    it("accepts file_path under tmpdir", async () => {
+      // tempDir already lives under tmpdir() via the suite's beforeEach.
+      const filePath = join(tempDir, "src.txt");
+      writeFileSync(filePath, "from-tmp");
+      const client = { addTextSource: vi.fn().mockResolvedValue(undefined) };
+      await findTool(sourceTools, "notebook_add_text").execute(
+        client,
+        { notebook_id: "n1", file_path: filePath, title: "T" },
+        noopOpts(),
+      );
+      expect(client.addTextSource).toHaveBeenCalledWith("n1", "from-tmp", "T");
+    });
   });
 
   it("notebook_add_drive calls addDriveSource with all args", async () => {
@@ -536,5 +578,16 @@ describe("authTools", () => {
     const [savedTokens] = vi.mocked(saveTokens).mock.calls[0];
     expect(savedTokens.cookies).toEqual({});
     expect(result._client_action).toBe("reset");
+  });
+
+  it("save_auth_tokens skips cookie segments with no '=' separator", async () => {
+    await findTool(authTools, "save_auth_tokens").execute(
+      {},
+      { cookies: "SID=a; ORPHAN; HSID=b" },
+      noopOpts(),
+    );
+    const [savedTokens] = vi.mocked(saveTokens).mock.calls[0];
+    expect(savedTokens.cookies).toEqual({ SID: "a", HSID: "b" });
+    expect(savedTokens.cookies.ORPHAN).toBeUndefined();
   });
 });

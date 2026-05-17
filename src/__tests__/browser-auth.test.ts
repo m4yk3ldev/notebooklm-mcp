@@ -72,16 +72,38 @@ import {
 const fetchMock = vi.fn();
 const originalFetch = globalThis.fetch;
 
+// Helper: build a fake ChildProcess whose stderr immediately emits the
+// DevTools "listening on" line so launchChrome's port discovery resolves
+// without waiting on a real Chrome.
+function fakeChromeProcess(port = 51234) {
+  const listeners: Record<string, Array<(arg: any) => void>> = {};
+  const stderr = {
+    on(event: string, cb: (arg: any) => void) {
+      (listeners[event] ||= []).push(cb);
+      // Defer the emit one tick so the caller has time to attach listeners.
+      if (event === "data") {
+        setTimeout(() => {
+          cb(Buffer.from(`DevTools listening on ws://127.0.0.1:${port}/devtools/browser/abc\n`));
+        }, 0);
+      }
+      return stderr;
+    },
+    off() {},
+  };
+  return {
+    stderr,
+    unref: vi.fn(),
+    kill: vi.fn(),
+    on: vi.fn(),
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   hoisted.FakeWebSocket.instances.length = 0;
   hoisted.validateCookiesMock.mockReturnValue(true);
   hoisted.execSyncMock.mockImplementation(() => Buffer.from(""));
-  hoisted.spawnMock.mockReturnValue({
-    unref: vi.fn(),
-    kill: vi.fn(),
-    on: vi.fn(),
-  });
+  hoisted.spawnMock.mockReturnValue(fakeChromeProcess());
   globalThis.fetch = fetchMock as any;
 });
 afterEach(() => {
@@ -116,6 +138,11 @@ describe("findChrome", () => {
     });
     expect(findChrome()).toBeNull();
   });
+
+  it("returns null on platforms with no candidate list (e.g. freebsd)", () => {
+    setPlatform("freebsd");
+    expect(findChrome()).toBeNull();
+  });
 });
 
 describe("launchChrome", () => {
@@ -127,14 +154,19 @@ describe("launchChrome", () => {
     await expect(launchChrome(false)).rejects.toThrow(/Could not find Google Chrome/);
   });
 
-  it("spawns Chrome with required flags (headed)", async () => {
+  it("spawns Chrome with port 0 (OS-assigned) + loopback bind + headed", async () => {
     setPlatform("linux");
     hoisted.execSyncMock.mockImplementationOnce(() => Buffer.from("Chrome 120"));
-    await launchChrome(false);
+    const { port } = await launchChrome(false);
     expect(hoisted.spawnMock).toHaveBeenCalledOnce();
-    const [, args] = hoisted.spawnMock.mock.calls[0];
-    expect(args).toContain("--remote-debugging-port=9229");
+    const [, args, opts] = hoisted.spawnMock.mock.calls[0];
+    expect(args).toContain("--remote-debugging-port=0");
+    expect(args).toContain("--remote-debugging-address=127.0.0.1");
     expect(args).not.toContain("--headless=new");
+    // stdio must pipe stderr so port discovery can read it.
+    expect(opts.stdio).toEqual(["ignore", "ignore", "pipe"]);
+    // Port is whatever the fake stderr printed (default 51234).
+    expect(port).toBe(51234);
   });
 
   it("spawns Chrome with --headless=new when requested", async () => {
@@ -143,6 +175,86 @@ describe("launchChrome", () => {
     await launchChrome(true);
     const [, args] = hoisted.spawnMock.mock.calls[0];
     expect(args).toContain("--headless=new");
+  });
+
+  it("returns different ports across runs (no fixed port collision)", async () => {
+    setPlatform("linux");
+    hoisted.execSyncMock.mockImplementation(() => Buffer.from("Chrome 120"));
+    hoisted.spawnMock.mockReturnValueOnce(fakeChromeProcess(40001));
+    hoisted.spawnMock.mockReturnValueOnce(fakeChromeProcess(40002));
+    const a = await launchChrome(false);
+    const b = await launchChrome(false);
+    expect(a.port).not.toBe(b.port);
+  });
+
+  it("rejects (and kills child) when Chrome never prints the DevTools URL", async () => {
+    setPlatform("linux");
+    hoisted.execSyncMock.mockImplementationOnce(() => Buffer.from("Chrome 120"));
+    // Stderr that never emits the DevTools line.
+    const killSpy = vi.fn();
+    const silentStderr = {
+      on(_event: string, _cb: (arg: any) => void) {
+        return silentStderr;
+      },
+      off() {},
+    };
+    hoisted.spawnMock.mockReturnValueOnce({
+      stderr: silentStderr,
+      unref: vi.fn(),
+      kill: killSpy,
+      on: vi.fn(),
+    });
+    // Real timeout is 10s; jump time forward to settle fast.
+    vi.useFakeTimers();
+    const promise = launchChrome(false);
+    vi.advanceTimersByTime(11_000);
+    await expect(promise).rejects.toThrow(/Timed out.*DevTools URL/);
+    expect(killSpy).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("discoverDevtoolsPort accumulates partial stderr before the DevTools line", async () => {
+    setPlatform("linux");
+    hoisted.execSyncMock.mockImplementationOnce(() => Buffer.from("Chrome 120"));
+    // stderr emits a few unrelated lines before the DevTools listening line.
+    // This exercises the `if (m)` false branch where `re.exec(buf)` returns null.
+    const callbacks: Array<(arg: any) => void> = [];
+    const stderr: any = {
+      on(event: string, cb: (arg: any) => void) {
+        if (event === "data") {
+          callbacks.push(cb);
+          setTimeout(() => cb(Buffer.from("[INFO] starting up\n")), 0);
+          setTimeout(() => cb(Buffer.from("[INFO] loading profile\n")), 5);
+          setTimeout(() => cb(Buffer.from("DevTools listening on ws://127.0.0.1:55555/devtools/browser/x\n")), 10);
+        }
+        return stderr;
+      },
+      off() {},
+    };
+    hoisted.spawnMock.mockReturnValueOnce({
+      stderr,
+      unref: vi.fn(),
+      kill: vi.fn(),
+      on: vi.fn(),
+    });
+    const { port } = await launchChrome(false);
+    expect(port).toBe(55555);
+  });
+
+  it("rejects (and kills child) when Chrome spawns without stderr", async () => {
+    setPlatform("linux");
+    hoisted.execSyncMock.mockImplementationOnce(() => Buffer.from("Chrome 120"));
+    const killSpy = vi.fn();
+    hoisted.spawnMock.mockReturnValueOnce({
+      stderr: null,
+      unref: vi.fn(),
+      kill: killSpy,
+      on: vi.fn(),
+    });
+    await expect(launchChrome(false)).rejects.toThrow(
+      /Chrome process did not expose stderr/,
+    );
+    expect(killSpy).toHaveBeenCalled();
   });
 });
 
@@ -336,6 +448,122 @@ describe("runBrowserAuthFlow error paths", () => {
     expect(tokens.session_id).toBe("s");
   }, 10000);
 
+  it("getDebuggerUrl retries when /json/list returns non-OK", async () => {
+    fetchMock
+      .mockResolvedValueOnce({ ok: false, status: 500, json: async () => [] })
+      .mockResolvedValue({
+        ok: true,
+        json: async () => [
+          { type: "page", url: "https://notebooklm.google.com", webSocketDebuggerUrl: "ws://retry" },
+        ],
+      });
+    const promise = runBrowserAuthFlow();
+    const ws = await waitForInstance();
+    expect(ws.url).toBe("ws://retry");
+    // Drive to settlement so the promise doesn't hang.
+    ws.emit("open");
+    setTimeout(() => {
+      ws.emit("message", Buffer.from(JSON.stringify({
+        result: { cookies: [{ name: "SID", value: "a" }] },
+      })));
+    }, 10);
+    setTimeout(() => {
+      ws.emit("message", Buffer.from(JSON.stringify({
+        result: { result: { value: JSON.stringify({ href: "https://notebooklm.google.com/", csrf: "c", sid: "s", bl: "" }) } },
+      })));
+    }, 20);
+    await expect(promise).resolves.toBeDefined();
+  }, 10000);
+
+  it("getDebuggerUrl retries when /json/list returns a non-array body", async () => {
+    fetchMock
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ unexpected: "shape" }) })
+      .mockResolvedValue({
+        ok: true,
+        json: async () => [
+          { type: "page", url: "https://notebooklm.google.com", webSocketDebuggerUrl: "ws://recovered" },
+        ],
+      });
+    const promise = runBrowserAuthFlow();
+    const ws = await waitForInstance();
+    expect(ws.url).toBe("ws://recovered");
+    ws.emit("open");
+    setTimeout(() => {
+      ws.emit("message", Buffer.from(JSON.stringify({
+        result: { cookies: [{ name: "SID", value: "a" }] },
+      })));
+    }, 10);
+    setTimeout(() => {
+      ws.emit("message", Buffer.from(JSON.stringify({
+        result: { result: { value: JSON.stringify({ href: "https://notebooklm.google.com/", csrf: "c", sid: "s", bl: "" }) } },
+      })));
+    }, 20);
+    await expect(promise).resolves.toBeDefined();
+  }, 10000);
+
+  it("getDebuggerUrl retries when no page-typed tab is present", async () => {
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [
+          // Type 'background_page' — neither the notebookTab nor firstPage finders match.
+          { type: "background_page", url: "https://example.com", webSocketDebuggerUrl: "ws://bg" },
+        ],
+      })
+      .mockResolvedValue({
+        ok: true,
+        json: async () => [
+          { type: "page", url: "https://notebooklm.google.com", webSocketDebuggerUrl: "ws://eventual" },
+        ],
+      });
+    const promise = runBrowserAuthFlow();
+    const ws = await waitForInstance();
+    expect(ws.url).toBe("ws://eventual");
+    ws.emit("open");
+    setTimeout(() => {
+      ws.emit("message", Buffer.from(JSON.stringify({
+        result: { cookies: [{ name: "SID", value: "a" }] },
+      })));
+    }, 10);
+    setTimeout(() => {
+      ws.emit("message", Buffer.from(JSON.stringify({
+        result: { result: { value: JSON.stringify({ href: "https://notebooklm.google.com/", csrf: "c", sid: "s", bl: "" }) } },
+      })));
+    }, 20);
+    await expect(promise).resolves.toBeDefined();
+  }, 10000);
+
+  it("getDebuggerUrl falls back to first page tab when no NotebookLM tab present", async () => {
+    // Simulate /json/list returning a tab that is NOT on the NotebookLM origin.
+    // The implementation should still pick it up via the firstPage fallback.
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => [
+        {
+          type: "page",
+          url: "https://example.com/",
+          webSocketDebuggerUrl: "ws://localhost:9229/devtools/page/FALLBACK",
+        },
+      ],
+    });
+    const promise = runBrowserAuthFlow();
+    const ws = await waitForInstance();
+    expect(ws.url).toContain("FALLBACK");
+    // Drive the flow to completion so the promise settles cleanly.
+    ws.emit("open");
+    setTimeout(() => {
+      ws.emit("message", Buffer.from(JSON.stringify({
+        result: { cookies: [{ name: "SID", value: "a" }] },
+      })));
+    }, 10);
+    setTimeout(() => {
+      ws.emit("message", Buffer.from(JSON.stringify({
+        result: { result: { value: JSON.stringify({ href: "https://notebooklm.google.com/", csrf: "c", sid: "s", bl: "" }) } },
+      })));
+    }, 20);
+    await expect(promise).resolves.toBeDefined();
+  }, 10000);
+
   it("ignores incomplete cookie sets (validateCookies=false)", async () => {
     hoisted.validateCookiesMock.mockReturnValueOnce(false).mockReturnValue(true);
     mockDebuggerUrl();
@@ -368,6 +596,89 @@ describe("runBrowserAuthFlow error paths", () => {
 
     const tokens = await promise;
     expect(tokens.csrf_token).toBe("c");
+  }, 10000);
+
+  it("falls back to JSON.stringify when CDP error has no message property", async () => {
+    mockDebuggerUrl();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const promise = runBrowserAuthFlow();
+    const ws = await waitForInstance();
+    // Error has no `.message` field — the `|| JSON.stringify(...)` fallback should fire.
+    ws.emit("message", Buffer.from(JSON.stringify({ error: { code: -32601 } })));
+    vi.advanceTimersByTime(125_000);
+    await expect(promise).rejects.toThrow(/CDP error: \{"code":-32601\}/);
+    vi.useRealTimers();
+  }, 10000);
+
+  it("send() no-ops when WebSocket is not in OPEN state (readyState != 1)", async () => {
+    mockDebuggerUrl();
+    const promise = runBrowserAuthFlow();
+    const ws = await waitForInstance();
+    // Flip the WS into CONNECTING before "open" fires; send() should
+    // silently skip the JSON write.
+    ws.readyState = 0;
+    ws.emit("open");
+    // Then unblock by going OPEN and providing complete tokens.
+    ws.readyState = 1;
+    setTimeout(() => {
+      ws.emit("message", Buffer.from(JSON.stringify({
+        result: { cookies: [{ name: "SID", value: "a" }] },
+      })));
+    }, 10);
+    setTimeout(() => {
+      ws.emit("message", Buffer.from(JSON.stringify({
+        result: { result: { value: JSON.stringify({ href: "https://notebooklm.google.com/", csrf: "c", sid: "s", bl: "" }) } },
+      })));
+    }, 20);
+    await expect(promise).resolves.toBeDefined();
+    // At least one send was attempted while CONNECTING — verify it was skipped.
+    expect(ws.sent.find((m: string) => m.includes("Runtime.enable"))).toBeUndefined();
+  }, 10000);
+
+  it("defaults csrf/sid to '' when the page evaluate result omits them", async () => {
+    mockDebuggerUrl();
+    const promise = runBrowserAuthFlow();
+    const ws = await waitForInstance();
+    ws.emit("open");
+    setTimeout(() => {
+      ws.emit("message", Buffer.from(JSON.stringify({
+        result: { cookies: [{ name: "SID", value: "a" }] },
+      })));
+    }, 10);
+    setTimeout(() => {
+      // Evaluate result returns href (on NotebookLM) but no csrf / sid fields.
+      ws.emit("message", Buffer.from(JSON.stringify({
+        result: { result: { value: JSON.stringify({ href: "https://notebooklm.google.com/" }) } },
+      })));
+    }, 20);
+    const tokens = await promise;
+    expect(tokens.csrf_token).toBe("");
+    expect(tokens.session_id).toBe("");
+  }, 10000);
+
+  it("global CDP timeout rejects with the configured timeout message", async () => {
+    mockDebuggerUrl();
+    // Use fake timers so we can fast-forward past the 120s global timeout
+    // without actually waiting in real time. WebSocket "open" never fires
+    // → no progress → timer fires the rejection path.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const promise = runBrowserAuthFlow();
+    await waitForInstance();
+    vi.advanceTimersByTime(125_000);
+    await expect(promise).rejects.toThrow(/timed out after/i);
+    vi.useRealTimers();
+  }, 10000);
+
+  it("includes last CDP error in the timeout message when one was recorded", async () => {
+    mockDebuggerUrl();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const promise = runBrowserAuthFlow();
+    const ws = await waitForInstance();
+    // Surface a CDP-level error reply (no cookies returned).
+    ws.emit("message", Buffer.from(JSON.stringify({ error: { message: "perm-denied" } })));
+    vi.advanceTimersByTime(125_000);
+    await expect(promise).rejects.toThrow(/CDP error: perm-denied/);
+    vi.useRealTimers();
   }, 10000);
 
   it("tolerates malformed CDP messages", async () => {

@@ -101,3 +101,71 @@ describe("cli auth", () => {
     spy.mockRestore();
   });
 });
+
+describe("cli direct-invocation catch", () => {
+  it("auto-runs main() when invoked as bin and exits 1 on rejection", async () => {
+    // Resolve the absolute path the cli.ts module exposes via import.meta.url
+    // so the `fileURLToPath(import.meta.url) === process.argv[1]` guard fires.
+    const { fileURLToPath } = await import("node:url");
+    const cliUrl = new URL("../cli.ts", import.meta.url);
+    const cliPath = fileURLToPath(cliUrl);
+
+    const originalArgv = process.argv;
+    const originalExit = process.exit;
+    const originalConsoleError = console.error;
+
+    const errCalls: unknown[][] = [];
+    // Replace console.error directly so we observe writes from inside cli.ts
+    // regardless of when spy lifecycle restores things.
+    console.error = ((...args: unknown[]) => {
+      errCalls.push(args);
+    }) as typeof console.error;
+
+    const exitCalls: number[] = [];
+    // Replace process.exit with a no-op that records calls; throwing here
+    // surfaces as an unhandled rejection because .catch returns void.
+    (process as any).exit = ((code?: number) => {
+      exitCalls.push(typeof code === "number" ? code : 0);
+    }) as typeof process.exit;
+
+    // Force createServer / connect to throw, so main()'s default-serve path
+    // rejects and the top-level .catch fires.
+    hoisted.serverInstance.connect.mockRejectedValueOnce(new Error("boom"));
+
+    process.argv = ["node", cliPath];
+    try {
+      vi.resetModules();
+      // Re-mock everything because resetModules clears the module registry.
+      vi.doMock("../server.js", () => ({ createServer: hoisted.createServerMock }));
+      vi.doMock("@modelcontextprotocol/sdk/server/stdio.js", () => ({
+        StdioServerTransport: hoisted.stdioCtor,
+      }));
+      vi.doMock("../auth.js", () => ({
+        runAuthFlow: hoisted.runAuthFlowMock,
+        runFileImport: hoisted.runFileImportMock,
+        showTokens: hoisted.showTokensMock,
+        saveTokens: vi.fn(),
+      }));
+      vi.doMock("../browser-auth.js", () => ({
+        runBrowserAuthFlow: hoisted.runBrowserAuthFlowMock,
+      }));
+
+      // Importing the module triggers the top-level guard, which calls
+      // main().catch(...). The rejection settles asynchronously; wait
+      // long enough for the microtask queue to flush.
+      await import("../cli.js");
+      await new Promise((r) => setTimeout(r, 100));
+    } finally {
+      process.argv = originalArgv;
+      (process as any).exit = originalExit;
+      console.error = originalConsoleError;
+      vi.doUnmock("../server.js");
+      vi.doUnmock("@modelcontextprotocol/sdk/server/stdio.js");
+      vi.doUnmock("../auth.js");
+      vi.doUnmock("../browser-auth.js");
+    }
+
+    expect(errCalls.length).toBeGreaterThan(0);
+    expect(exitCalls).toContain(1);
+  });
+});

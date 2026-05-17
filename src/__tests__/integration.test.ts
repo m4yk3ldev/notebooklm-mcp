@@ -16,6 +16,7 @@ vi.mock("../auth.js", () => ({
   extractCsrfFromPage: vi.fn(() => "mock-csrf"),
   extractSessionIdFromPage: vi.fn(() => "mock-sid"),
   saveTokens: vi.fn(),
+  loadTokensFromCache: vi.fn(() => null),
 }));
 
 import { refreshCookiesHeadless } from "../browser-auth.js";

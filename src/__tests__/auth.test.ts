@@ -119,6 +119,17 @@ describe("loadTokensFromEnv", () => {
     expect(tokens!.csrf_token).toBe("csrf-1");
     expect(tokens!.session_id).toBe("sid-1");
   });
+
+  it("ignores cookie segments with no '=' separator", async () => {
+    // Add a malformed pair (no `=`) alongside the required cookies; the
+    // malformed segment should be skipped, not treated as a name-only cookie.
+    process.env.NOTEBOOKLM_COOKIES =
+      "SID=a; HSID=b; SSID=c; APISID=d; SAPISID=e; MALFORMED";
+    const { loadTokensFromEnv } = await importAuth();
+    const tokens = loadTokensFromEnv();
+    expect(tokens).not.toBeNull();
+    expect(tokens!.cookies.MALFORMED).toBeUndefined();
+  });
 });
 
 describe("loadTokensFromCache / saveTokens", () => {
@@ -157,6 +168,23 @@ describe("loadTokensFromCache / saveTokens", () => {
     saveTokens(tokens);
     expect(loadTokensFromCache()).toEqual(tokens);
   });
+
+  it("writes auth.json with mode 0600 and config dir with mode 0700", async () => {
+    const tokens = {
+      cookies: { SID: "a", HSID: "b", SSID: "c", APISID: "d", SAPISID: "e" },
+      csrf_token: "t",
+      session_id: "s",
+      extracted_at: 1700000000,
+    };
+    const { saveTokens } = await importAuth();
+    saveTokens(tokens);
+    const { statSync } = await import("node:fs");
+    const dirMode = statSync(join(tempHome, ".notebooklm-mcp")).mode & 0o777;
+    const fileMode =
+      statSync(join(tempHome, ".notebooklm-mcp", "auth.json")).mode & 0o777;
+    expect(dirMode).toBe(0o700);
+    expect(fileMode).toBe(0o600);
+  });
 });
 
 describe("showTokens", () => {
@@ -182,6 +210,23 @@ describe("showTokens", () => {
     expect(log).toContain("5 (SID");
     expect(log).toContain("Required cookies present: yes");
     expect(log).toContain("CSRF token: present");
+    spy.mockRestore();
+  });
+
+  it("reports missing csrf/session and 'unknown' age when extracted_at is falsy", async () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const { saveTokens, showTokens } = await importAuth();
+    saveTokens({
+      cookies: { SID: "a", HSID: "b", SSID: "c", APISID: "d", SAPISID: "e" },
+      csrf_token: "",
+      session_id: "",
+      extracted_at: 0,
+    });
+    showTokens();
+    const log = spy.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(log).toContain("CSRF token: missing");
+    expect(log).toContain("Session ID: missing");
+    expect(log).toContain("Age: unknown hours");
     spy.mockRestore();
   });
 });
@@ -213,6 +258,22 @@ describe("runFileImport", () => {
     expect(tokens.cookies.SID).toBe("a");
     expect(tokens.cookies.APISID).toBe("d");
     expect(loadTokensFromCache()!.cookies.SID).toBe("a");
+    spy.mockRestore();
+  });
+
+  it("parseCookieString (via runFileImport) skips segments with no '=' separator", async () => {
+    // Drop a malformed token (no `=`) into the file so the
+    // `eq > 0` false branch in parseCookieString is exercised.
+    const filePath = join(tempHome, "cookies-malformed.txt");
+    writeFileSync(
+      filePath,
+      "SID=a; HSID=b; SSID=c; APISID=d; SAPISID=e; ORPHAN\n",
+    );
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const { runFileImport } = await importAuth();
+    const tokens = await runFileImport(filePath);
+    expect(tokens.cookies.ORPHAN).toBeUndefined();
+    expect(tokens.cookies.SID).toBe("a");
     spy.mockRestore();
   });
 });
@@ -324,6 +385,26 @@ describe("runAuthFlow", () => {
       vi.doUnmock("node:child_process");
     },
   );
+
+  it("openInBrowser silently no-ops on unknown platforms (e.g. freebsd)", async () => {
+    Object.defineProperty(process, "platform", { value: "freebsd" });
+    vi.doMock("node:readline", () => readlineMock);
+    vi.doMock("node:child_process", () => ({ execSync: execSyncMock }));
+    readlineMock.createInterface.mockReturnValue({
+      question: (_p: string, cb: (ans: string) => void) =>
+        cb("SID=a; HSID=b; SSID=c; APISID=d; SAPISID=e"),
+      close: vi.fn(),
+    });
+
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const { runAuthFlow } = await importAuth();
+    await runAuthFlow();
+    // No execSync call because no branch matched.
+    expect(execSyncMock).not.toHaveBeenCalled();
+    spy.mockRestore();
+    vi.doUnmock("node:readline");
+    vi.doUnmock("node:child_process");
+  });
 });
 
 describe("loadTokens resolution order", () => {

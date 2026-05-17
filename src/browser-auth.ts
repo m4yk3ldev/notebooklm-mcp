@@ -1,13 +1,21 @@
-import { execSync, spawn } from "node:child_process";
+import { execSync, spawn, type ChildProcess } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import type { Readable } from "node:stream";
 import WebSocket from "ws";
 import type { AuthTokens } from "./types.js";
 import { BASE_URL, REQUIRED_COOKIES } from "./constants.js";
 import { validateCookies, saveTokens } from "./auth.js";
 
-const CDP_PORT = 9229;
+// Bind exclusively to loopback. Without --remote-debugging-address Chrome
+// may listen on 0.0.0.0 on some platforms (notably WSL2), exposing the
+// DevTools Protocol — and the live Google session — to anyone on the LAN.
+const CDP_HOST = "127.0.0.1";
+
+// Default DevTools-port discovery timeout. Chrome usually prints
+// "DevTools listening on ..." within ~1s on a warm profile, ~3s cold.
+const PORT_DISCOVERY_TIMEOUT_MS = 10_000;
 
 export function findChrome(): string | null {
   const candidates: string[] = [];
@@ -56,7 +64,7 @@ async function getDebuggerUrl(port: number): Promise<string> {
   const maxRetries = 20;
   for (let i = 0; i < maxRetries; i++) {
     try {
-      const response = await fetch(`http://localhost:${port}/json/list`);
+      const response = await fetch(`http://${CDP_HOST}:${port}/json/list`);
       if (response.ok) {
         const data = (await response.json()) as any[];
         if (Array.isArray(data)) {
@@ -85,7 +93,45 @@ async function getDebuggerUrl(port: number): Promise<string> {
   throw new Error("Could not connect to Chrome remote debugging port.");
 }
 
-export async function launchChrome(headless: boolean) {
+// Read Chrome's stderr until we see the "DevTools listening on ws://..."
+// line, then return the port. Lets us launch with --remote-debugging-port=0
+// (OS-assigned) instead of a hardcoded port, removing the fixed-port
+// race / squat risk where another process on the host could pre-bind 9229
+// and impersonate Chrome.
+export async function discoverDevtoolsPort(
+  stderr: Readable,
+  timeoutMs: number = PORT_DISCOVERY_TIMEOUT_MS,
+): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const re = /DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)\//;
+    let buf = "";
+    const timer = setTimeout(() => {
+      stderr.off("data", onData);
+      reject(
+        new Error(
+          `Timed out after ${timeoutMs}ms waiting for Chrome to print its DevTools URL.`,
+        ),
+      );
+    }, timeoutMs);
+    const onData = (chunk: Buffer | string) => {
+      buf += chunk.toString();
+      const m = re.exec(buf);
+      if (m) {
+        clearTimeout(timer);
+        stderr.off("data", onData);
+        resolve(Number(m[1]));
+      }
+    };
+    stderr.on("data", onData);
+  });
+}
+
+export interface LaunchedChrome {
+  proc: ChildProcess;
+  port: number;
+}
+
+export async function launchChrome(headless: boolean): Promise<LaunchedChrome> {
   const chromePath = findChrome();
   if (!chromePath) {
     throw new Error(
@@ -94,10 +140,12 @@ export async function launchChrome(headless: boolean) {
   }
 
   const userDataDir = join(homedir(), ".notebooklm-mcp", "chrome-profile");
-  mkdirSync(userDataDir, { recursive: true });
+  mkdirSync(userDataDir, { recursive: true, mode: 0o700 });
 
   const args = [
-    `--remote-debugging-port=${CDP_PORT}`,
+    // Port 0 → OS assigns an ephemeral port; address pinned to loopback.
+    "--remote-debugging-port=0",
+    `--remote-debugging-address=${CDP_HOST}`,
     `--user-data-dir=${userDataDir}`,
     "--no-first-run",
     "--no-default-browser-check",
@@ -108,19 +156,35 @@ export async function launchChrome(headless: boolean) {
     args.push("--headless=new");
   }
 
-  const chromeProcess = spawn(chromePath, args, {
+  const proc = spawn(chromePath, args, {
     detached: true,
-    stdio: "ignore",
+    // Capture stderr so we can read the DevTools port line; stdout/stdin ignored.
+    stdio: ["ignore", "ignore", "pipe"],
   });
-  chromeProcess.unref();
-  return chromeProcess;
+  proc.unref();
+
+  if (!proc.stderr) {
+    proc.kill();
+    throw new Error(
+      "Chrome process did not expose stderr; cannot discover DevTools port.",
+    );
+  }
+
+  try {
+    const port = await discoverDevtoolsPort(proc.stderr);
+    return { proc, port };
+  } catch (err) {
+    proc.kill();
+    throw err;
+  }
 }
 
 async function extractCookiesViaCDP(
   timeoutMs: number,
   showProgress: boolean,
+  port: number,
 ): Promise<AuthTokens> {
-  const wsUrl = await getDebuggerUrl(CDP_PORT);
+  const wsUrl = await getDebuggerUrl(port);
   const ws = new WebSocket(wsUrl);
 
   return new Promise((resolve, reject) => {
@@ -212,9 +276,14 @@ async function extractCookiesViaCDP(
             };
 
             lastExtractedTokens = tokens;
+            // showProgress is always `true` for runBrowserAuthFlow /
+            // refreshCookiesHeadless (the only callers). The else-if's
+            // false branch is unreachable from production code paths.
+            /* v8 ignore start */
           } else if (showProgress) {
             process.stderr.write(".");
           }
+          /* v8 ignore stop */
         }
 
         if (response.result?.result?.value && lastExtractedTokens) {
@@ -224,6 +293,8 @@ async function extractCookiesViaCDP(
             if (!data.href || !data.href.startsWith("https://notebooklm.google.com")) {
               // Still on Google login/chooser — reset and keep polling
               lastExtractedTokens = null;
+              // showProgress always true from production callers (see above).
+              /* v8 ignore next */
               if (showProgress) process.stderr.write("🔑");
               return;
             }
@@ -247,17 +318,14 @@ async function extractCookiesViaCDP(
 export async function refreshCookiesHeadless(): Promise<AuthTokens> {
   console.error("🔄 Attempting background session refresh...");
   // Use non-headless to avoid Google's detection of automated environments
-  const chromeProcess = await launchChrome(false);
+  const { proc, port } = await launchChrome(false);
 
   try {
-    const tokens = await extractCookiesViaCDP(30000, true);
+    const tokens = await extractCookiesViaCDP(30000, true, port);
     console.error("✅ Background refresh successful.");
     return tokens;
-  } catch (error) {
-    throw error;
   } finally {
-    // Kill the headless process when done
-    chromeProcess.kill();
+    proc.kill();
   }
 }
 
@@ -267,22 +335,27 @@ export async function runBrowserAuthFlow(): Promise<AuthTokens> {
     "   (A dedicated profile will be used at ~/.notebooklm-mcp/chrome-profile)",
   );
 
-  const chromeProcess = await launchChrome(false);
+  const { proc, port } = await launchChrome(false);
 
   try {
     console.error("\n🔓 Ready for login! If you're already signed into Google, we'll handle the rest automatically.\n");
 
-    const tokens = await extractCookiesViaCDP(120000, true);
+    const tokens = await extractCookiesViaCDP(120000, true, port);
     console.error("\n✅ Connection secured! Your NotebookLM session is now synchronized.");
     return tokens;
   } catch (error) {
+    // extractCookiesViaCDP always rejects with Error instances; the else
+    // branch exists only to forward truly exotic throw-values that bypass
+    // the wrap above. Unreachable in normal operation.
+    /* v8 ignore else */
     if (error instanceof Error) {
       throw new Error(
         `Smart Auth failed: ${error.message}\nTry manual auth instead.`,
       );
     }
+    /* v8 ignore next */
     throw error;
   } finally {
-    chromeProcess.kill();
+    proc.kill();
   }
 }

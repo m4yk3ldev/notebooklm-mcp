@@ -1,6 +1,30 @@
 import { z } from "zod";
 import { McpTool, pendingConfirmation } from "./index.js";
-import * as fs from "fs";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as os from "node:os";
+
+// notebook_add_text accepts a file_path from the MCP client. Without
+// validation, a hostile prompt could read arbitrary local files
+// (~/.ssh/id_rsa, /etc/passwd, etc) and ship them to NotebookLM as a
+// "source". Restrict to files under the server's CWD or the OS temp
+// directory. Users who need to ingest files elsewhere should copy them in.
+export function resolveAllowedReadPath(filePath: string): string {
+  const resolved = path.resolve(filePath);
+  const allowedRoots = [path.resolve(process.cwd()), path.resolve(os.tmpdir())];
+  const ok = allowedRoots.some(
+    (root) => resolved === root || resolved.startsWith(root + path.sep),
+  );
+  if (!ok) {
+    throw new Error(
+      `file_path "${filePath}" resolves to ${resolved}, which is outside the ` +
+        `allowed roots (cwd: ${allowedRoots[0]}, tmpdir: ${allowedRoots[1]}). ` +
+        `Move the file into the working directory or pass the content inline ` +
+        `via the "content" parameter.`,
+    );
+  }
+  return resolved;
+}
 
 export const sourceTools: McpTool<any>[] = [
   {
@@ -51,7 +75,8 @@ export const sourceTools: McpTool<any>[] = [
     execute: async (client, { notebook_id, content, file_path, title }) => {
       let documentContent = content;
       if (!documentContent && file_path) {
-        documentContent = fs.readFileSync(file_path, "utf8");
+        const safePath = resolveAllowedReadPath(file_path);
+        documentContent = fs.readFileSync(safePath, "utf8");
       }
       if (!documentContent) {
         throw new Error("Must provide either content or file_path");

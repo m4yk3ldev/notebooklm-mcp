@@ -43,29 +43,41 @@ pnpm test
 
 ```
 src/
-  cli.ts          # Entry point — commander subcommands (serve, auth)
-  server.ts       # MCP server bootstrap — wires tools to a lazy NotebookLMClient
-  client.ts       # NotebookLMClient — HTTP/RPC calls to batchexecute API
-  auth.ts         # Token load/save, cookie validation, manual auth flow
-  browser-auth.ts # Chrome DevTools Protocol (CDP) automated cookie extraction
-  constants.ts    # RPC IDs, enum mappers, URLs, config values
-  types.ts        # Shared TypeScript interfaces
+  cli.ts            # Entry point — commander subcommands (serve, auth); version read from package.json
+  server.ts         # MCP server bootstrap — wires tools to a lazy NotebookLMClient
+  client.ts         # NotebookLMClient — thin domain facade composing rpc/* collaborators
+  rpc/
+    transport.ts    # RpcTransport — fetch + response.ok + Set-Cookie merge + abort-bound body read
+    auth-state.ts   # AuthState — tokens / csrf / sessionId, single-flight refresh mutex, disk reload
+    wire.ts         # Pure parsers — parseResponse, extractTextFromBlocks
+  auth.ts           # Token load/save (mode 0600), cookie validation, manual auth flow
+  browser-auth.ts   # Chrome DevTools Protocol (CDP) — OS-assigned port, loopback bind
+  constants.ts      # RPC IDs, enum mappers, URLs, config values
+  types.ts          # Shared TypeScript interfaces
   tools/
-    index.ts      # McpTool<T> interface + registerTools() framework
-    auth.ts       # Auth helper tools
-    notebook.ts   # Notebook CRUD tools
-    source.ts     # Source ingestion / management tools
-    query.ts      # Grounded Q&A and chat config
-    research.ts   # Deep research tools
-    studio.ts     # Studio artifact generation tools
-  __tests__/      # vitest + MSW unit and integration tests
+    index.ts        # McpTool<T> interface, registerTools(), resolveSourceIds(), clientResetSignal()
+    auth.ts         # Auth helper tools
+    notebook.ts     # Notebook CRUD tools
+    source.ts       # Source ingestion / management tools (with path-traversal guard)
+    query.ts        # Grounded Q&A and chat config
+    research.ts     # Deep research tools
+    studio.ts       # Studio artifact generation tools
+  __tests__/        # vitest + MSW unit and integration tests (100% coverage)
 ```
 
 ## How It Works
 
-The server communicates with NotebookLM through Google's internal `batchexecute` RPC endpoint. Authentication is cookie-based — users paste their browser cookies, which are stored in `~/.notebooklm-mcp/auth.json`.
+The server communicates with NotebookLM through Google's internal `batchexecute` RPC endpoint. Authentication is cookie-based — users authenticate via the bundled Chrome flow (`notebooklm-mcp auth`), and the resulting cookies are persisted to `~/.notebooklm-mcp/auth.json` (mode `0600`).
 
-Each MCP tool maps to one or more RPC calls defined in `constants.ts`. The `client.ts` file handles request encoding, response parsing, and automatic CSRF token refresh.
+Internally, `NotebookLMClient` (in `src/client.ts`) is a **domain facade**: each public method (`listNotebooks`, `query`, `createAudioOverview`, …) is a small wrapper that delegates infrastructure to three single-purpose modules under `src/rpc/`:
+
+| Module | Owns |
+|---|---|
+| `RpcTransport` (`rpc/transport.ts`) | Outbound HTTP. Enforces `response.ok`, races `response.text()` against the abort signal so slow bodies actually time out, and merges Set-Cookie headers into `AuthState`. |
+| `AuthState` (`rpc/auth-state.ts`) | Token / CSRF / session state. `refreshOnce()` is single-flight — concurrent callers share one promise and only one Chrome flow is spawned per refresh round. `reloadIfNewer()` checks the disk cache first so out-of-process refreshes are picked up. |
+| `wire` (`rpc/wire.ts`) | Pure parsers for the batchexecute envelope (`parseResponse`) and answer text extraction (`extractTextFromBlocks`). No `this`, fully unit-testable. |
+
+When you add a new RPC capability you only touch `src/constants.ts` (for the rpc id), one method on `NotebookLMClient` (calling `this.transport.callBatchexecute(...)`), and a tool wrapper in `src/tools/`. The transport, retry, abort, status, and refresh concerns are already taken care of.
 
 ## Making Changes
 
