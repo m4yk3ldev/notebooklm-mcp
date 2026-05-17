@@ -12,7 +12,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "prepublishOnly": "npm run build",
+    "prepublishOnly": "pnpm run build",
     "auth": "node dist/cli.js auth",
     "serve": "node dist/cli.js serve",
     "test": "vitest run",
@@ -21,6 +21,7 @@
   "engines": {
     "node": ">=18"
   },
+  "packageManager": "pnpm@10.33.0",
   "keywords": [
     "mcp",
     "notebooklm",
@@ -52,10 +53,21 @@
   "devDependencies": {
     "@types/node": "20.19.33",
     "@types/ws": "8.5.14",
-    "@vitest/coverage-v8": "^4.1.5",
-    "msw": "^2.12.10",
+    "@vitest/coverage-v8": "4.1.5",
+    "msw": "2.12.10",
     "tsup": "8.5.1",
     "typescript": "5.9.3",
-    "vitest": "^4.0.18"
+    "vitest": "4.1.5"
+  },
+  "pnpm": {
+    "overrides": {
+      "@hono/node-server": "1.19.14",
+      "hono": "4.12.19",
+      "fast-uri": "3.1.2",
+      "express-rate-limit": "8.5.2",
+      "path-to-regexp": "8.4.2",
+      "rollup": "4.60.4",
+      "ip-address": "10.2.0"
+    }
   }
 }

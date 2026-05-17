@@ -2,47 +2,146 @@ name: Build & Publish
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
     tags:
       - 'v*'
   pull_request:
-    branches: [ main ]
+    branches: [main]
+
+# Default to read-only. Each job escalates only what it needs.
+permissions:
+  contents: read
+
+# Kill superseded runs on the same ref.
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          # SHA-256 of gitleaks_8.30.1_linux_x64.tar.gz from upstream
+          # checksums.txt. Bump together with GITLEAKS_VERSION.
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          set -euo pipefail
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSLo "$tarball" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${tarball}"
+          echo "${GITLEAKS_SHA256}  ${tarball}" | sha256sum -c -
+          tar -xzf "$tarball" gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Run gitleaks (incremental)
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_SHA: ${{ github.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          ZERO_SHA="0000000000000000000000000000000000000000"
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            LOG_OPTS="${PR_BASE_SHA}..${PR_HEAD_SHA}"
+          elif [ -n "$PUSH_BEFORE" ] && [ "$PUSH_BEFORE" != "$ZERO_SHA" ]; then
+            LOG_OPTS="${PUSH_BEFORE}..${PUSH_SHA}"
+          else
+            LOG_OPTS="-1 HEAD"
+          fi
+          echo "Scanning range: $LOG_OPTS"
+          gitleaks detect --source=. --no-banner --redact --verbose --exit-code 1 --log-opts="$LOG_OPTS"
+
+  osv-scan:
+    name: Dependency audit (osv-scanner)
+    runs-on: ubuntu-latest
+    needs: [secret-scan]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: google/osv-scanner-action/osv-scanner-action@v2.2.4
+        with:
+          scan-args: |-
+            --lockfile=pnpm-lock.yaml
+
+  audit:
+    name: Supply-chain audit (pnpm)
+    runs-on: ubuntu-latest
+    needs: [osv-scan]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@v6
+        with:
+          # npm >= 9.5 still required on PATH for `npm audit signatures`
+          # (pnpm has no equivalent). Node 22 ships npm 10.
+          node-version: '22'
+          cache: pnpm
+      - run: ./scripts/pre-release.sh
+        env:
+          CI: 'true'
+
   test:
     name: Run Tests
     runs-on: ubuntu-latest
+    needs: [audit]
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
-      - run: npm ci
-      - run: npm run build
-      - run: npm test
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - run: pnpm test
 
   publish:
     name: Publish to NPM
-    needs: test
+    needs: [test]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       id-token: write
       contents: write
     steps:
       - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
       # Do NOT pass registry-url: setup-node would write an
       # .npmrc with _authToken=${NODE_AUTH_TOKEN}, and a stale
       # NPM_TOKEN secret would sabotage OIDC. publishConfig.registry
       # in package.json already points to registry.npmjs.org.
       # Node 24 ships with npm >= 11.5.1 which supports
-      # OIDC Trusted Publishers (node 22.x bundles npm 10.x).
+      # OIDC Trusted Publishers.
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
-      - run: npm ci
-      - run: npm run build
-      - run: npm publish --access public
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - run: pnpm publish --access public --no-git-checks
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:

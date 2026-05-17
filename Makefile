@@ -32,6 +32,7 @@ help:
 	@printf '  make changelog      Preview the generated CHANGELOG section\n'
 	@printf '  make release        Bump version, update CHANGELOG, commit, tag\n'
 	@printf '  make release-push   Same as release, then push commit and tag\n'
+	@printf '  make pre-release    Supply-chain audit (deps, signatures, lockfile)\n'
 	@printf '\nOverride:\n'
 	@printf '  make release VERSION=0.2.0\n'
 
@@ -48,10 +49,14 @@ changelog:
 release:
 	@$(RELEASE) release "$(CURRENT)" "$(NEXT)"
 
+.PHONY: pre-release
+pre-release:
+	@./scripts/pre-release.sh
+
 # Pushes the most recent release (whatever `make release` last created).
 # Does NOT depend on `release` — that's a separate, deliberate step.
 .PHONY: release-push
-release-push:
+release-push: pre-release
 	@git rev-parse -q --verify "refs/tags/v$(CURRENT)" >/dev/null \
 	  || { echo "no local tag v$(CURRENT); run 'make release' first"; exit 1; }
 	git push origin main
