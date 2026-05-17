@@ -42,7 +42,7 @@ npm install -g @m4ykeldev/notebooklm-mcp
 
 > Developers who want to hack on the source: this repo uses **pnpm**
 > (pinned via `packageManager` in `package.json`). After cloning, run
-> `corepack enable && pnpm install`. See [CONTRIBUTING.md](CONTRIBUTING.md)
+> `corepack enable && pnpm install`. See [CONTRIBUTING.md on GitHub](https://github.com/m4yk3ldev/notebooklm-mcp/blob/main/CONTRIBUTING.md)
 > for the full dev / release flow.
 
 ### 2. The "One-Click" Login
@@ -69,7 +69,7 @@ For headless / CI environments, set `NOTEBOOKLM_COOKIES` (and optionally `NOTEBO
 
 ## 🤖 AI Assistant Integration
 
-> **Looking for Codex CLI, Gemini CLI, Windsurf, JetBrains AI Assistant, Zed, OpenCode, Cline, Goose, 5ire, or the OpenAI Agents SDK?** See [docs/clients.md](docs/clients.md) — copy-paste config for 15+ MCP clients in one place.
+> **Looking for Codex CLI, Gemini CLI, Windsurf, JetBrains AI Assistant, Zed, OpenCode, Cline, Goose, 5ire, or the OpenAI Agents SDK?** See the [multi-client integration guide on GitHub](https://github.com/m4yk3ldev/notebooklm-mcp/blob/main/docs/clients.md) — copy-paste config for 15+ MCP clients in one place.
 
 ### Claude Desktop / Claude Code
 
@@ -266,7 +266,7 @@ notebooklm-mcp --version
 - **Path-traversal guard**. `notebook_add_text` rejects `file_path` arguments outside the working directory or the OS temp directory — a hostile MCP prompt cannot ask the server to read your `~/.ssh/id_rsa`.
 - **Loopback-only Chrome DevTools**. The automated auth flow launches Chrome with an OS-assigned ephemeral port bound to `127.0.0.1` — no fixed-port squatting, no LAN exposure.
 - **Single-flight auth refresh**. Concurrent requests that hit an expired session share one refresh promise instead of each spawning their own Chrome.
-- **Supply-chain gated releases**. Every publish runs gitleaks → osv-scanner → `pnpm audit` (high+) → `npm audit signatures` (Sigstore) → lockfile registry pinning → publish-manifest preview before `pnpm publish` ships via OIDC trusted publishers. See [CONTRIBUTING.md → Releasing](CONTRIBUTING.md#releasing).
+- **Supply-chain gated releases**. Every publish runs gitleaks → osv-scanner → `pnpm audit` (high+) → `npm audit signatures` (Sigstore) → lockfile registry pinning → publish-manifest preview before `pnpm publish` ships via OIDC trusted publishers. See [CONTRIBUTING.md → Releasing on GitHub](https://github.com/m4yk3ldev/notebooklm-mcp/blob/main/CONTRIBUTING.md#releasing).
 - **Test coverage**: 100% statements / branches / functions / lines, enforced by CI.
 - **Unofficial Tool**: This project is an independent community effort and is not affiliated with Google. It interfaces with internal endpoints and may be affected by changes to the NotebookLM web platform.
 
