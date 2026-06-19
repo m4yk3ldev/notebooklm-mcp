@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -73,7 +73,21 @@ export async function main(argv: string[] = process.argv): Promise<void> {
 }
 
 // Only auto-run when invoked directly, not when imported as a library/tested.
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+// process.argv[1] may be a symlink (npm/npx installs the bin as a symlink in
+// node_modules/.bin), so resolve it to its real path before comparing — else
+// the guard is always false under npx and the CLI exits 0 doing nothing.
+function isInvokedDirectly(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  const self = fileURLToPath(import.meta.url);
+  try {
+    return realpathSync(entry) === self;
+  } catch {
+    return entry === self;
+  }
+}
+
+if (isInvokedDirectly()) {
   main().catch((err) => {
     console.error(err);
     process.exit(1);

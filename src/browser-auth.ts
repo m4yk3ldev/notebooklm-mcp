@@ -149,6 +149,12 @@ export async function launchChrome(headless: boolean): Promise<LaunchedChrome> {
     `--user-data-dir=${userDataDir}`,
     "--no-first-run",
     "--no-default-browser-check",
+    // Prevent Google from flagging this as an automated browser
+    "--disable-blink-features=AutomationControlled",
+    "--disable-features=IsolateOrigins,site-per-process",
+    "--disable-infobars",
+    "--disable-dev-shm-usage",
+    `--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36`,
     BASE_URL,
   ];
 
