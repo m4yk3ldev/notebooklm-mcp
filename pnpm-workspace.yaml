@@ -1,10 +1,17 @@
+packages:
+  - "."
+
 pnpm:
   overrides:
     "@hono/node-server": "1.19.14"
     "hono": "4.12.25"
     "vite": "8.0.16"
+    "esbuild": "0.28.1"
     "fast-uri": "3.1.2"
     "express-rate-limit": "8.5.2"
     "path-to-regexp": "8.4.2"
     "rollup": "4.60.4"
     "ip-address": "10.2.0"
+  peerDependencyRules:
+    allowAny:
+      - "esbuild"

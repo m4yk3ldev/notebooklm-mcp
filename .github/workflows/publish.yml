@@ -76,6 +76,8 @@ jobs:
         with:
           scan-args: |-
             --lockfile=pnpm-lock.yaml
+            --severity=HIGH
+            --severity=CRITICAL
 
   audit:
     name: Supply-chain audit (pnpm)
