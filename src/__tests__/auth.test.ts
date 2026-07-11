@@ -130,6 +130,15 @@ describe("loadTokensFromEnv", () => {
     expect(tokens).not.toBeNull();
     expect(tokens!.cookies.MALFORMED).toBeUndefined();
   });
+
+  it("carries NOTEBOOKLM_BL through when set", async () => {
+    process.env.NOTEBOOKLM_COOKIES =
+      "SID=a; HSID=b; SSID=c; APISID=d; SAPISID=e";
+    process.env.NOTEBOOKLM_BL = "boq_labs-tailwind-frontend_20260709.14_p0";
+    const { loadTokensFromEnv } = await importAuth();
+    const tokens = loadTokensFromEnv();
+    expect(tokens!.bl).toBe("boq_labs-tailwind-frontend_20260709.14_p0");
+  });
 });
 
 describe("loadTokensFromCache / saveTokens", () => {
@@ -167,6 +176,21 @@ describe("loadTokensFromCache / saveTokens", () => {
     const { saveTokens, loadTokensFromCache } = await importAuth();
     saveTokens(tokens);
     expect(loadTokensFromCache()).toEqual(tokens);
+  });
+
+  it("preserves the bl token across save -> load", async () => {
+    const tokens = {
+      cookies: { SID: "a", HSID: "b", SSID: "c", APISID: "d", SAPISID: "e" },
+      csrf_token: "t",
+      session_id: "s",
+      bl: "boq_labs-tailwind-frontend_20260709.14_p0",
+      extracted_at: 1700000000,
+    };
+    const { saveTokens, loadTokensFromCache } = await importAuth();
+    saveTokens(tokens);
+    expect(loadTokensFromCache()!.bl).toBe(
+      "boq_labs-tailwind-frontend_20260709.14_p0",
+    );
   });
 
   it("writes auth.json with mode 0600 and config dir with mode 0700", async () => {

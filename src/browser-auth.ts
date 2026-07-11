@@ -1,5 +1,5 @@
 import { execSync, spawn, type ChildProcess } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync, readlinkSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type { Readable } from "node:stream";
@@ -126,6 +126,61 @@ export async function discoverDevtoolsPort(
   });
 }
 
+// True if `pid` still names a Chrome/Chromium process. Guards against killing
+// an unrelated process that reused a PID recorded in a stale SingletonLock.
+// Linux-only proc inspection; best-effort (assume yes) on other platforms.
+function isChromeProcess(pid: number): boolean {
+  if (process.platform !== "linux") return true;
+  try {
+    const cmd = readFileSync(`/proc/${pid}/cmdline`, "utf-8");
+    return cmd.includes("chrome") || cmd.includes("chromium");
+  } catch {
+    return false;
+  }
+}
+
+// A Chrome instance already holding `userDataDir` makes every subsequent
+// launch delegate the URL to it and exit WITHOUT printing its own DevTools
+// "listening on ..." line — so discoverDevtoolsPort times out and the whole
+// auth flow fails. This happened routinely: the previous run's Chrome leaked
+// (spawned detached, survived node exiting) and kept the profile lock.
+//
+// Kill the process named in SingletonLock, then remove the singleton lock
+// files and the stale DevToolsActivePort so the next launch starts its own
+// fresh instance (which prints its DevTools URL normally). The dedicated
+// profile is only ever used by this tool, so the login persists across the
+// kill/relaunch — the user does not re-login.
+export function releaseProfile(userDataDir: string): void {
+  const singletonLock = join(userDataDir, "SingletonLock");
+  try {
+    if (existsSync(singletonLock)) {
+      // SingletonLock is a symlink whose target looks like "<host>-<pid>".
+      const pid = Number(readlinkSync(singletonLock).split("-").pop());
+      if (Number.isInteger(pid) && pid > 0 && isChromeProcess(pid)) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          // already gone
+        }
+      }
+    }
+  } catch {
+    // ignore — best-effort
+  }
+  for (const f of [
+    "SingletonLock",
+    "SingletonSocket",
+    "SingletonCookie",
+    "DevToolsActivePort",
+  ]) {
+    try {
+      rmSync(join(userDataDir, f), { force: true });
+    } catch {
+      // ignore
+    }
+  }
+}
+
 export interface LaunchedChrome {
   proc: ChildProcess;
   port: number;
@@ -141,6 +196,10 @@ export async function launchChrome(headless: boolean): Promise<LaunchedChrome> {
 
   const userDataDir = join(homedir(), ".notebooklm-mcp", "chrome-profile");
   mkdirSync(userDataDir, { recursive: true, mode: 0o700 });
+
+  // Clear any leftover Chrome + lock files holding this profile, otherwise the
+  // new instance delegates to the old one and never reports its DevTools port.
+  releaseProfile(userDataDir);
 
   const args = [
     // Port 0 → OS assigns an ephemeral port; address pinned to loopback.
@@ -162,12 +221,14 @@ export async function launchChrome(headless: boolean): Promise<LaunchedChrome> {
     args.push("--headless=new");
   }
 
+  // Not detached: tie Chrome's lifetime to this process. The auth flow always
+  // awaits extraction and then kills proc in a finally, so detaching only
+  // risked leaking a Chrome that survives node and poisons the next run by
+  // holding the profile lock (the very bug releaseProfile now cleans up).
   const proc = spawn(chromePath, args, {
-    detached: true,
     // Capture stderr so we can read the DevTools port line; stdout/stdin ignored.
     stdio: ["ignore", "ignore", "pipe"],
   });
-  proc.unref();
 
   if (!proc.stderr) {
     proc.kill();
@@ -299,6 +360,9 @@ async function extractCookiesViaCDP(
             if (!data.href || !data.href.startsWith("https://notebooklm.google.com")) {
               // Still on Google login/chooser — reset and keep polling
               lastExtractedTokens = null;
+              if (process.env.NOTEBOOKLM_DEBUG) {
+                process.stderr.write(`\n[debug] href=${data.href} csrf=${!!data.csrf} sid=${!!data.sid}\n`);
+              }
               // showProgress always true from production callers (see above).
               /* v8 ignore next */
               if (showProgress) process.stderr.write("🔑");

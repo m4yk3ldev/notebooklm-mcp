@@ -4,6 +4,10 @@ const hoisted = vi.hoisted(() => {
   const execSyncMock = vi.fn();
   const spawnMock = vi.fn();
   const mkdirSyncMock = vi.fn();
+  const existsSyncMock = vi.fn();
+  const readlinkSyncMock = vi.fn();
+  const rmSyncMock = vi.fn();
+  const readFileSyncMock = vi.fn();
   const homedirMock = vi.fn(() => "/tmp/fake-home");
   const saveTokensMock = vi.fn();
   const validateCookiesMock = vi.fn();
@@ -37,6 +41,10 @@ const hoisted = vi.hoisted(() => {
     execSyncMock,
     spawnMock,
     mkdirSyncMock,
+    existsSyncMock,
+    readlinkSyncMock,
+    rmSyncMock,
+    readFileSyncMock,
     homedirMock,
     saveTokensMock,
     validateCookiesMock,
@@ -50,7 +58,14 @@ vi.mock("node:child_process", async (importOriginal) => {
 });
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
-  return { ...actual, mkdirSync: hoisted.mkdirSyncMock };
+  return {
+    ...actual,
+    mkdirSync: hoisted.mkdirSyncMock,
+    existsSync: hoisted.existsSyncMock,
+    readlinkSync: hoisted.readlinkSyncMock,
+    rmSync: hoisted.rmSyncMock,
+    readFileSync: hoisted.readFileSyncMock,
+  };
 });
 vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:os")>();
@@ -66,6 +81,7 @@ import {
   findChrome,
   launchChrome,
   refreshCookiesHeadless,
+  releaseProfile,
   runBrowserAuthFlow,
 } from "../browser-auth.js";
 
@@ -104,6 +120,11 @@ beforeEach(() => {
   hoisted.validateCookiesMock.mockReturnValue(true);
   hoisted.execSyncMock.mockImplementation(() => Buffer.from(""));
   hoisted.spawnMock.mockReturnValue(fakeChromeProcess());
+  // releaseProfile fs defaults: no leftover lock → no kill, rmSync is a no-op.
+  hoisted.existsSyncMock.mockReturnValue(false);
+  hoisted.readlinkSyncMock.mockReturnValue("");
+  hoisted.rmSyncMock.mockImplementation(() => {});
+  hoisted.readFileSyncMock.mockReturnValue("");
   globalThis.fetch = fetchMock as any;
 });
 afterEach(() => {
@@ -255,6 +276,110 @@ describe("launchChrome", () => {
       /Chrome process did not expose stderr/,
     );
     expect(killSpy).toHaveBeenCalled();
+  });
+});
+
+describe("releaseProfile", () => {
+  const DIR = "/tmp/fake-home/.notebooklm-mcp/chrome-profile";
+
+  it("kills the Chrome named in SingletonLock and removes lock files (linux)", () => {
+    setPlatform("linux");
+    hoisted.existsSyncMock.mockReturnValue(true);
+    hoisted.readlinkSyncMock.mockReturnValue("host-96665");
+    hoisted.readFileSyncMock.mockReturnValue("/opt/google/chrome/chrome\0--foo");
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
+
+    releaseProfile(DIR);
+
+    expect(killSpy).toHaveBeenCalledWith(96665, "SIGKILL");
+    // All four singleton / port files are removed.
+    expect(hoisted.rmSyncMock).toHaveBeenCalledTimes(4);
+    killSpy.mockRestore();
+  });
+
+  it("assumes Chrome on non-linux platforms (no /proc inspection)", () => {
+    setPlatform("darwin");
+    hoisted.existsSyncMock.mockReturnValue(true);
+    hoisted.readlinkSyncMock.mockReturnValue("host-4321");
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
+
+    releaseProfile(DIR);
+
+    expect(killSpy).toHaveBeenCalledWith(4321, "SIGKILL");
+    killSpy.mockRestore();
+  });
+
+  it("does not kill when the locked pid is not a Chrome process (linux)", () => {
+    setPlatform("linux");
+    hoisted.existsSyncMock.mockReturnValue(true);
+    hoisted.readlinkSyncMock.mockReturnValue("host-777");
+    // /proc read fails → isChromeProcess false.
+    hoisted.readFileSyncMock.mockImplementation(() => {
+      throw new Error("ENOENT");
+    });
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
+
+    releaseProfile(DIR);
+
+    expect(killSpy).not.toHaveBeenCalled();
+    killSpy.mockRestore();
+  });
+
+  it("does not kill when the lock target has no numeric pid", () => {
+    setPlatform("linux");
+    hoisted.existsSyncMock.mockReturnValue(true);
+    hoisted.readlinkSyncMock.mockReturnValue("garbage-target");
+    hoisted.readFileSyncMock.mockReturnValue("chrome");
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
+
+    releaseProfile(DIR);
+
+    expect(killSpy).not.toHaveBeenCalled();
+    killSpy.mockRestore();
+  });
+
+  it("skips the kill path entirely when no SingletonLock exists", () => {
+    hoisted.existsSyncMock.mockReturnValue(false);
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
+
+    releaseProfile(DIR);
+
+    expect(killSpy).not.toHaveBeenCalled();
+    expect(hoisted.rmSyncMock).toHaveBeenCalledTimes(4);
+    killSpy.mockRestore();
+  });
+
+  it("tolerates process.kill throwing (process already gone)", () => {
+    setPlatform("linux");
+    hoisted.existsSyncMock.mockReturnValue(true);
+    hoisted.readlinkSyncMock.mockReturnValue("host-555");
+    hoisted.readFileSyncMock.mockReturnValue("chromium");
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => {
+      throw new Error("ESRCH");
+    });
+
+    expect(() => releaseProfile(DIR)).not.toThrow();
+    expect(hoisted.rmSyncMock).toHaveBeenCalledTimes(4);
+    killSpy.mockRestore();
+  });
+
+  it("tolerates readlinkSync throwing and still removes files", () => {
+    hoisted.existsSyncMock.mockReturnValue(true);
+    hoisted.readlinkSyncMock.mockImplementation(() => {
+      throw new Error("EINVAL");
+    });
+
+    expect(() => releaseProfile(DIR)).not.toThrow();
+    expect(hoisted.rmSyncMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("ignores rmSync failures", () => {
+    hoisted.existsSyncMock.mockReturnValue(false);
+    hoisted.rmSyncMock.mockImplementation(() => {
+      throw new Error("EBUSY");
+    });
+
+    expect(() => releaseProfile(DIR)).not.toThrow();
   });
 });
 
@@ -446,6 +571,48 @@ describe("runBrowserAuthFlow error paths", () => {
 
     const tokens = await promise;
     expect(tokens.session_id).toBe("s");
+  }, 10000);
+
+  it("logs the wrong-page href when NOTEBOOKLM_DEBUG is set", async () => {
+    mockDebuggerUrl();
+    const prev = process.env.NOTEBOOKLM_DEBUG;
+    process.env.NOTEBOOKLM_DEBUG = "1";
+    const writeSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    try {
+      const promise = runBrowserAuthFlow();
+      const ws = await waitForInstance();
+      ws.emit("open");
+      setTimeout(() => {
+        ws.emit("message", Buffer.from(JSON.stringify({
+          result: { cookies: [{ name: "SID", value: "a" }] },
+        })));
+      }, 10);
+      // On the Google chooser → debug line should fire.
+      setTimeout(() => {
+        ws.emit("message", Buffer.from(JSON.stringify({
+          result: { result: { value: JSON.stringify({ href: "https://accounts.google.com/chooser" }) } },
+        })));
+      }, 20);
+      // Then land on NotebookLM so the flow settles.
+      setTimeout(() => {
+        ws.emit("message", Buffer.from(JSON.stringify({
+          result: { cookies: [{ name: "SID", value: "a" }] },
+        })));
+      }, 30);
+      setTimeout(() => {
+        ws.emit("message", Buffer.from(JSON.stringify({
+          result: { result: { value: JSON.stringify({ href: "https://notebooklm.google.com/", csrf: "c", sid: "s", bl: "" }) } },
+        })));
+      }, 40);
+      await promise;
+      expect(
+        writeSpy.mock.calls.some(([m]) => String(m).includes("[debug] href=https://accounts.google.com/chooser")),
+      ).toBe(true);
+    } finally {
+      writeSpy.mockRestore();
+      if (prev === undefined) delete process.env.NOTEBOOKLM_DEBUG;
+      else process.env.NOTEBOOKLM_DEBUG = prev;
+    }
   }, 10000);
 
   it("getDebuggerUrl retries when /json/list returns non-OK", async () => {

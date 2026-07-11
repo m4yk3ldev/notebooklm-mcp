@@ -59,6 +59,10 @@ export function loadTokensFromCache(): AuthTokens | null {
         cookies: data.cookies,
         csrf_token: data.csrf_token || "",
         session_id: data.session_id || "",
+        // Preserve the backend-release token (bl) captured at auth time.
+        // Dropping it here forced every reload back to the stale DEFAULT_BL,
+        // which breaks RPCs after Google rolls the frontend build.
+        ...(data.bl ? { bl: data.bl } : {}),
         extracted_at: data.extracted_at || 0,
       };
     }
@@ -86,6 +90,7 @@ export function loadTokensFromEnv(): AuthTokens | null {
     cookies,
     csrf_token: process.env.NOTEBOOKLM_CSRF_TOKEN || "",
     session_id: process.env.NOTEBOOKLM_SESSION_ID || "",
+    ...(process.env.NOTEBOOKLM_BL ? { bl: process.env.NOTEBOOKLM_BL } : {}),
     extracted_at: Date.now() / 1000,
   };
 }
