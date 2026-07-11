@@ -143,39 +143,6 @@ export const studioTools: McpTool<any>[] = [
     },
   },
   {
-    name: "data_table_create",
-    description: "Generate a data table (requires confirm=true)",
-    schema: {
-      notebook_id: z.string().describe("The notebook ID"),
-      description: z.string().describe("Description of the table to generate"),
-      source_ids: z.array(z.string()).optional().describe("Source IDs (omit for all)"),
-      language: z.string().optional().describe("BCP-47 language code"),
-      confirm: z.boolean().describe("Must be true to start generation"),
-    },
-    execute: async (client, { notebook_id, description, source_ids, language, confirm }) => {
-      if (!confirm) return pendingConfirmation("Set confirm=true to generate data table.");
-      const ids = await resolveSourceIds(client, notebook_id, source_ids);
-      const artifactId = await client.createDataTable(notebook_id, ids, description, language);
-      return { artifact_id: artifactId, message: "Data table generation started. Use studio_status to check progress." };
-    },
-  },
-  {
-    name: "mind_map_create",
-    description: "Generate a mind map (requires confirm=true)",
-    schema: {
-      notebook_id: z.string().describe("The notebook ID"),
-      source_ids: z.array(z.string()).optional().describe("Source IDs (omit for all)"),
-      title: z.string().optional().describe("Custom title for the mind map"),
-      confirm: z.boolean().describe("Must be true to start generation"),
-    },
-    execute: async (client, { notebook_id, source_ids, title, confirm }) => {
-      if (!confirm) return pendingConfirmation("Set confirm=true to generate mind map.");
-      const ids = await resolveSourceIds(client, notebook_id, source_ids);
-      const artifactId = await client.createMindMap(notebook_id, ids, title);
-      return { artifact_id: artifactId, message: "Mind map generation started. Use studio_status to check progress." };
-    },
-  },
-  {
     name: "studio_status",
     description: "Check the status of generated Studio artifacts",
     schema: {
@@ -184,20 +151,6 @@ export const studioTools: McpTool<any>[] = [
     execute: async (client, { notebook_id }) => {
       const artifacts = await client.pollStudio(notebook_id);
       return { artifacts };
-    },
-  },
-  {
-    name: "studio_delete",
-    description: "Delete a Studio artifact (requires confirm=true)",
-    schema: {
-      notebook_id: z.string().describe("The notebook ID"),
-      artifact_id: z.string().describe("The artifact ID to delete"),
-      confirm: z.boolean().describe("Must be true to confirm deletion"),
-    },
-    execute: async (client, { notebook_id, artifact_id, confirm }) => {
-      if (!confirm) return pendingConfirmation("Set confirm=true to delete this artifact.");
-      await client.deleteStudio(notebook_id, artifact_id);
-      return { message: "Artifact deleted" };
     },
   },
 ];

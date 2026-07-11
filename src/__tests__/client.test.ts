@@ -19,7 +19,7 @@ vi.mock("../auth.js", () => ({
   loadTokensFromCache: vi.fn(() => null),
 }));
 
-import { refreshCookiesHeadless } from "../browser-auth.js";
+import { refreshCookiesHeadless, runBrowserAuthFlow } from "../browser-auth.js";
 
 const server = setupServer();
 
@@ -176,34 +176,25 @@ describe("NotebookLMClient", () => {
     await expect(client.listNotebooks()).rejects.toThrow(/HTTP 503 Service Unavailable/);
   });
 
-  it("checkFreshness rethrows AuthenticationError instead of returning null", async () => {
-    let calls = 0;
+  it("rethrows the original auth error when both refresh paths fail", async () => {
+    // Every batchexecute returns auth-error [16]; disk has no fresher tokens
+    // and both the headless refresh and the manual browser flow reject — so
+    // execute() must surface the original AuthenticationError, not the
+    // refresh failure.
     server.use(
-      http.post(`${BASE_URL}${BATCHEXECUTE_PATH}`, ({ request }) => {
-        calls++;
-        const url = new URL(request.url);
-        if (url.searchParams.get("rpcids") === RPC_IDS.CHECK_FRESHNESS) {
-          // Every call returns auth-error so the refresh path is engaged
-          // and checkFreshness should not silently return null.
-          const bundle = ["wrb.fr", RPC_IDS.CHECK_FRESHNESS, null, null, null, [16], "generic"];
-          const json = JSON.stringify([bundle]);
-          return HttpResponse.text(`)]}'\n\n${json.length}\n${json}`);
-        }
-        return HttpResponse.text("<html>CSRF</html>");
+      http.post(`${BASE_URL}${BATCHEXECUTE_PATH}`, () => {
+        const bundle = ["wrb.fr", RPC_IDS.LIST_NOTEBOOKS, null, null, null, [16], "generic"];
+        const json = JSON.stringify([bundle]);
+        return HttpResponse.text(`)]}'\n\n${json.length}\n${json}`);
       }),
       http.get(`${BASE_URL}`, () => HttpResponse.text("<html>CSRF</html>")),
     );
-    (refreshCookiesHeadless as any).mockRejectedValue(new Error("refresh broken"));
-    // Stub stderr writes from the browser-auth fallback path to keep test output clean.
+    (refreshCookiesHeadless as any).mockRejectedValue(new Error("headless broken"));
+    (runBrowserAuthFlow as any).mockRejectedValue(new Error("browser broken"));
     vi.spyOn(console, "error").mockImplementation(() => {});
 
     const client = new NotebookLMClient(mockTokens);
-    // The auth-refresh path will eventually throw the original AuthenticationError;
-    // we expect checkFreshness to rethrow it rather than swallow.
-    await expect(client.checkFreshness("src-1", "nb-1")).rejects.toThrow(
-      /Authentication expired/,
-    );
-    expect(calls).toBeGreaterThan(0);
+    await expect(client.listNotebooks()).rejects.toThrow(/Authentication expired/);
   });
 
   it("shares one refresh across concurrent failing requests (mutex)", async () => {

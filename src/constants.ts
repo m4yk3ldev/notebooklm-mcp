@@ -48,12 +48,10 @@ export const RPC_IDS = {
   DELETE_NOTEBOOK: "WWINqb",
   ADD_SOURCE: "izAoDd",
   GET_SOURCE: "hizoJc",
-  CHECK_FRESHNESS: "yR9Yof",
   SYNC_DRIVE: "FLmJqe",
   DELETE_SOURCE: "tGMBJ",
   QUERY: "ZAnZ8",
   GET_CONVERSATIONS: "hPTbtc",
-  PREFERENCES: "hT54vc",
   SUBSCRIPTION: "ozz5Z",
   SETTINGS: "ZwVcOc",
   GET_SUMMARY: "VfAZjd",
@@ -64,29 +62,11 @@ export const RPC_IDS = {
   IMPORT_RESEARCH: "LBwxtb",
   CREATE_STUDIO: "R7cb6c",
   POLL_STUDIO: "gArtLc",
-  DELETE_STUDIO: "V5N4be",
-  GENERATE_MIND_MAP: "yyryJe",
-  SAVE_MIND_MAP: "CYK0Xb",
-  LIST_MIND_MAPS: "cFji9",
-  DELETE_MIND_MAP: "AH0mwd",
 } as const;
 
 // Ownership
 export const OWNERSHIP_MINE = 1;
 export const OWNERSHIP_SHARED = 2;
-
-// Chat
-export const CHAT_GOALS = new CodeMapper({
-  default: 1,
-  custom: 2,
-  learning_guide: 3,
-});
-
-export const CHAT_RESPONSE_LENGTHS = new CodeMapper({
-  default: 1,
-  longer: 4,
-  shorter: 5,
-});
 
 // Research
 export const RESEARCH_SOURCES = new CodeMapper({ web: 1, drive: 2 });

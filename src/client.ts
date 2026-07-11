@@ -29,8 +29,6 @@ import {
   FLASHCARD_DIFFICULTIES,
   FLASHCARD_COUNT_DEFAULT,
   REPORT_FORMATS,
-  CHAT_GOALS,
-  CHAT_RESPONSE_LENGTHS,
 } from "./constants.js";
 import {
   extractCsrfFromPage,
@@ -267,9 +265,12 @@ export class NotebookLMClient {
   }
 
   async deleteNotebook(notebookId: string): Promise<void> {
+    // Wire format: [[notebookId], [2]] — id wrapped in an array plus the
+    // project-context tag. The bare [notebookId] form Google rejects with
+    // INVALID_ARGUMENT (error code 3).
     await this.execute(
       RPC_IDS.DELETE_NOTEBOOK,
-      [notebookId],
+      [[notebookId], [2]],
       `/notebook/${notebookId}`,
     );
   }
@@ -435,29 +436,6 @@ export class NotebookLMClient {
       summary: data?.[0] || "",
       keywords: Array.isArray(data?.[1]) ? data[1] : [],
     };
-  }
-
-  async checkFreshness(
-    sourceId: string,
-    notebookId: string,
-  ): Promise<boolean | null> {
-    try {
-      const result = await this.execute(
-        RPC_IDS.CHECK_FRESHNESS,
-        [sourceId, notebookId],
-        `/notebook/${notebookId}`,
-      );
-      const data = result as any[];
-      return data?.[0] === true;
-    } catch (e) {
-      // Auth errors must surface so the caller can refresh and retry —
-      // don't collapse them into "not fresh".
-      if (e instanceof AuthenticationError) throw e;
-      console.warn(
-        `checkFreshness(${sourceId}) failed: ${(e as Error).message}`,
-      );
-      return null;
-    }
   }
 
   async syncDrive(sourceIds: string[], notebookId: string): Promise<void> {
@@ -1049,61 +1027,6 @@ export class NotebookLMClient {
     return data?.[0] || "";
   }
 
-  async createDataTable(
-    notebookId: string,
-    sourceIds: string[],
-    description: string,
-    language?: string,
-  ): Promise<string> {
-    const sourcesNested = this.formatSourcesNested(sourceIds);
-
-    const content: unknown[] = [
-      null,
-      null,
-      STUDIO_TYPES.getCode("data_table"),
-      sourcesNested,
-    ];
-    // Fill nulls up to position where data_table options go
-    for (let i = 0; i < 14; i++) content.push(null);
-    content.push([[description, language || null]]);
-
-    const result = await this.execute(
-      RPC_IDS.CREATE_STUDIO,
-      [[2], notebookId, content],
-      `/notebook/${notebookId}`,
-    );
-    const data = result as any[];
-    return data?.[0] || "";
-  }
-
-  async createMindMap(
-    notebookId: string,
-    sourceIds: string[],
-    title?: string,
-  ): Promise<string> {
-    const sourcesNested = this.formatSourcesNested(sourceIds);
-
-    // Step 1: Generate mind map
-    const genResult = await this.execute(
-      RPC_IDS.GENERATE_MIND_MAP,
-      [notebookId, sourcesNested, title || null],
-      `/notebook/${notebookId}`,
-    );
-
-    const genData = genResult as any[];
-    const mindMapData = genData?.[0];
-
-    // Step 2: Save mind map
-    const saveResult = await this.execute(
-      RPC_IDS.SAVE_MIND_MAP,
-      [notebookId, mindMapData, title || null],
-      `/notebook/${notebookId}`,
-    );
-
-    const saveData = saveResult as any[];
-    return saveData?.[0] || "";
-  }
-
   async pollStudio(notebookId: string): Promise<StudioArtifact[]> {
     const result = await this.execute(
       RPC_IDS.POLL_STUDIO,
@@ -1136,37 +1059,6 @@ export class NotebookLMClient {
     }
 
     return artifacts;
-  }
-
-  async deleteStudio(
-    notebookId: string,
-    artifactId: string,
-  ): Promise<void> {
-    await this.execute(
-      RPC_IDS.DELETE_STUDIO,
-      [notebookId, artifactId],
-      `/notebook/${notebookId}`,
-    );
-  }
-
-  // ─── Chat Configure ─────────────────────────────────
-
-  async chatConfigure(
-    notebookId: string,
-    goal?: string,
-    customPrompt?: string,
-    responseLength?: string,
-  ): Promise<void> {
-    const goalCode = goal ? CHAT_GOALS.getCode(goal) : 1;
-    const lengthCode = responseLength
-      ? CHAT_RESPONSE_LENGTHS.getCode(responseLength)
-      : 1;
-
-    await this.execute(
-      RPC_IDS.PREFERENCES,
-      [notebookId, goalCode, customPrompt || null, lengthCode],
-      `/notebook/${notebookId}`,
-    );
   }
 
   // ─── Auth Refresh (tool) ─────────────────────────────

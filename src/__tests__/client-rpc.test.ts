@@ -125,6 +125,18 @@ describe("notebook RPCs", () => {
     await expect(new NotebookLMClient(tokens).deleteNotebook("n1")).resolves.toBeUndefined();
   });
 
+  it("deleteNotebook sends the [[id],[2]] wire payload (not bare [id])", async () => {
+    const captured = mockBatchexecute({ [RPC_IDS.DELETE_NOTEBOOK]: [] });
+    await new NotebookLMClient(tokens).deleteNotebook("n1");
+    const body = captured.find((c) => c.rpcId === RPC_IDS.DELETE_NOTEBOOK)!.body;
+    const fReq = decodeURIComponent(body.split("f.req=")[1].split("&")[0]);
+    // f.req is [[[rpcId, JSON.stringify(params), null, "generic"]]] — the
+    // inner params must be [["n1"],[2]]; the bare ["n1"] form is rejected
+    // by Google with INVALID_ARGUMENT.
+    const params = JSON.parse(JSON.parse(fReq)[0][0][1]);
+    expect(params).toEqual([["n1"], [2]]);
+  });
+
   it("describeNotebook returns text or empty", async () => {
     mockBatchexecute({ [RPC_IDS.GET_SUMMARY]: ["s"] });
     expect(await new NotebookLMClient(tokens).describeNotebook("n1")).toBe("s");
@@ -384,19 +396,6 @@ describe("source RPCs", () => {
     });
     const s = await new NotebookLMClient(tokens).getSource("s1", "n1");
     expect(s.title).toBe("Title");
-  });
-
-  it("checkFreshness returns true / false", async () => {
-    mockBatchexecute({ [RPC_IDS.CHECK_FRESHNESS]: [true] });
-    expect(await new NotebookLMClient(tokens).checkFreshness("s1", "n1")).toBe(true);
-    server.resetHandlers();
-    mockBatchexecute({ [RPC_IDS.CHECK_FRESHNESS]: [false] });
-    expect(await new NotebookLMClient(tokens).checkFreshness("s1", "n1")).toBe(false);
-  });
-
-  it("checkFreshness returns null on RPC failure", async () => {
-    mockBatchexecute({}, { errors: { [RPC_IDS.CHECK_FRESHNESS]: [42] } });
-    expect(await new NotebookLMClient(tokens).checkFreshness("s1", "n1")).toBeNull();
   });
 
   it("syncDrive loops through every source id", async () => {
@@ -684,32 +683,16 @@ describe("research RPCs", () => {
 
 describe("studio create RPCs", () => {
   it.each([
-    ["createAudioOverview", {}, "a-id"],
-    ["createVideoOverview", {}, "v-id"],
-    ["createInfographic", {}, "i-id"],
-    ["createSlideDeck", {}, "s-id"],
-    ["createFlashcards", "easy", "f-id"],
-    ["createMindMap", undefined, undefined],
-  ] as const)("%s returns artifact id", async (method, extra, expectedId) => {
-    mockBatchexecute({
-      [RPC_IDS.CREATE_STUDIO]: ["art"],
-      [RPC_IDS.GENERATE_MIND_MAP]: [{ nodes: [] }],
-      [RPC_IDS.SAVE_MIND_MAP]: ["mind-art"],
-    });
+    ["createAudioOverview", {}],
+    ["createVideoOverview", {}],
+    ["createInfographic", {}],
+    ["createSlideDeck", {}],
+    ["createFlashcards", "easy"],
+  ] as const)("%s returns artifact id", async (method, extra) => {
+    mockBatchexecute({ [RPC_IDS.CREATE_STUDIO]: ["art"] });
     const c = new NotebookLMClient(tokens);
-    let id: string;
-    if (method === "createFlashcards") {
-      id = await (c as any)[method]("n1", ["s1"], extra);
-    } else if (method === "createMindMap") {
-      id = await c.createMindMap("n1", ["s1"], "Title");
-    } else {
-      id = await (c as any)[method]("n1", ["s1"], extra);
-    }
-    if (method === "createMindMap") {
-      expect(id).toBe("mind-art");
-    } else {
-      expect(id).toBe("art");
-    }
+    const id = await (c as any)[method]("n1", ["s1"], extra);
+    expect(id).toBe("art");
   });
 
   it("createReport uses custom prompt when format=Create Your Own", async () => {
@@ -738,21 +721,6 @@ describe("studio create RPCs", () => {
     expect(id).toBe("art");
   });
 
-  it("createMindMap defaults title to null when omitted", async () => {
-    mockBatchexecute({
-      [RPC_IDS.GENERATE_MIND_MAP]: [{ nodes: [] }],
-      [RPC_IDS.SAVE_MIND_MAP]: ["mind-art"],
-    });
-    const id = await new NotebookLMClient(tokens).createMindMap("n1", ["s1"]);
-    expect(id).toBe("mind-art");
-  });
-
-  it("createDataTable accepts undefined language", async () => {
-    mockBatchexecute({ [RPC_IDS.CREATE_STUDIO]: ["art"] });
-    const id = await new NotebookLMClient(tokens).createDataTable("n1", ["s1"], "rows");
-    expect(id).toBe("art");
-  });
-
   it.each([
     "createAudioOverview",
     "createVideoOverview",
@@ -767,24 +735,9 @@ describe("studio create RPCs", () => {
     expect(id).toBe("");
   });
 
-  it("createMindMap defaults to empty string when SAVE_MIND_MAP returns []", async () => {
-    mockBatchexecute({
-      [RPC_IDS.GENERATE_MIND_MAP]: [{}],
-      [RPC_IDS.SAVE_MIND_MAP]: [],
-    });
-    const id = await new NotebookLMClient(tokens).createMindMap("n1", ["s1"]);
-    expect(id).toBe("");
-  });
-
   it("createQuiz defaults to empty string when RPC returns []", async () => {
     mockBatchexecute({ [RPC_IDS.CREATE_STUDIO]: [] });
     const id = await new NotebookLMClient(tokens).createQuiz("n1", ["s1"]);
-    expect(id).toBe("");
-  });
-
-  it("createDataTable defaults to empty string when RPC returns []", async () => {
-    mockBatchexecute({ [RPC_IDS.CREATE_STUDIO]: [] });
-    const id = await new NotebookLMClient(tokens).createDataTable("n1", ["s1"], "rows");
     expect(id).toBe("");
   });
 
@@ -792,13 +745,6 @@ describe("studio create RPCs", () => {
     mockBatchexecute({ [RPC_IDS.CREATE_STUDIO]: ["art"] });
     const id = await new NotebookLMClient(tokens).createQuiz("n1", ["s1"], 7, "hard");
     expect(id).toBe("art");
-  });
-
-  it("createDataTable passes description", async () => {
-    const captured = mockBatchexecute({ [RPC_IDS.CREATE_STUDIO]: ["art"] });
-    await new NotebookLMClient(tokens).createDataTable("n1", ["s1"], "rows of x", "en");
-    const call = captured.find((c) => c.rpcId === RPC_IDS.CREATE_STUDIO)!;
-    expect(call.body).toContain("rows%20of%20x");
   });
 
   it("pollStudio parses artifacts and status codes", async () => {
@@ -838,25 +784,9 @@ describe("studio create RPCs", () => {
     expect(arts[0].download_url).toBeNull();
   });
 
-  it("deleteStudio completes", async () => {
-    mockBatchexecute({ [RPC_IDS.DELETE_STUDIO]: [] });
-    await expect(new NotebookLMClient(tokens).deleteStudio("n1", "a1")).resolves.toBeUndefined();
-  });
 });
 
-describe("chat + refresh", () => {
-  it("chatConfigure accepts all fields", async () => {
-    mockBatchexecute({ [RPC_IDS.PREFERENCES]: [] });
-    await expect(
-      new NotebookLMClient(tokens).chatConfigure("n1", "learning_guide", "p", "longer"),
-    ).resolves.toBeUndefined();
-  });
-
-  it("chatConfigure defaults when args omitted", async () => {
-    mockBatchexecute({ [RPC_IDS.PREFERENCES]: [] });
-    await expect(new NotebookLMClient(tokens).chatConfigure("n1")).resolves.toBeUndefined();
-  });
-
+describe("refresh", () => {
   it("refreshAuth fetches page and extracts tokens", async () => {
     mockBatchexecute();
     const c = new NotebookLMClient({ ...tokens, csrf_token: "", session_id: "" });

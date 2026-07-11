@@ -1,6 +1,13 @@
 # MCP Tools Validation Index
 
-This index tracks the validation status of all 32 MCP tools. Each tool has its own dedicated plan file in `docs/plans/` containing specific test cases and verification steps.
+This index tracks the validation status of all 27 MCP tools. Each tool has its own dedicated plan file in `docs/plans/` containing specific test cases and verification steps.
+
+> **Removed in v0.3.1:** `chat_configure`, `source_list_drive`, `data_table_create`,
+> `mind_map_create`, and `studio_delete` were removed after live testing showed their
+> `batchexecute` payloads are rejected by Google with `INVALID_ARGUMENT` (error code 3).
+> Their correct wire format is unknown and can't be guessed; they need to be
+> re-derived from real NotebookLM browser traffic before being re-added. Their plan
+> files are kept for historical reference.
 
 ## 1. Authentication Tools
 - [ ] `refresh_auth` ([Plan](01-auth-refresh.md))
@@ -16,7 +23,7 @@ This index tracks the validation status of all 32 MCP tools. Each tool has its o
 
 ## 3. Query & Configuration
 - [x] `notebook_query` ([Plan](09-query-execute.md))
-- [x] `chat_configure` ([Plan](10-query-config.md))
+- [~] `chat_configure` — **removed** (broken wire format; [Plan](10-query-config.md))
 
 ## 4. Deep Research
 - [x] `research_start` ([Plan](11-research-start.md))
@@ -29,7 +36,7 @@ This index tracks the validation status of all 32 MCP tools. Each tool has its o
 - [x] `notebook_add_url` ([Plan](16-source-add-url.md))
 - [x] `notebook_add_text` ([Plan](17-source-add-text.md))
 - [ ] `notebook_add_drive` ([Plan](18-source-add-drive.md))
-- [x] `source_list_drive` ([Plan](19-source-list-drive.md))
+- [~] `source_list_drive` — **removed** (freshness RPC broken; [Plan](19-source-list-drive.md))
 - [ ] `source_sync_drive` ([Plan](20-source-sync-drive.md))
 - [x] `source_delete` ([Plan](21-source-delete.md))
 
@@ -41,7 +48,7 @@ This index tracks the validation status of all 32 MCP tools. Each tool has its o
 - [x] `report_create` ([Plan](26-studio-report.md))
 - [x] `flashcards_create` ([Plan](27-studio-flashcards.md))
 - [x] `quiz_create` ([Plan](28-studio-quiz.md))
-- [x] `data_table_create` ([Plan](29-studio-table.md))
-- [x] `mind_map_create` ([Plan](30-studio-mindmap.md))
+- [~] `data_table_create` — **removed** (broken wire format; [Plan](29-studio-table.md))
+- [~] `mind_map_create` — **removed** (broken wire format; [Plan](30-studio-mindmap.md))
 - [x] `studio_status` ([Plan](31-studio-status.md))
-- [x] `studio_delete` ([Plan](32-studio-delete.md))
+- [~] `studio_delete` — **removed** (broken wire format; [Plan](32-studio-delete.md))

@@ -10,7 +10,7 @@ Stop jumping between browser tabs. **NotebookLM MCP** brings the full analytical
 
 Manage notebooks, ingest diverse sources, trigger deep research, and generate studio-quality content—all via a single, standardized Model Context Protocol (MCP) interface.
 
-> **New to MCP?** The [Model Context Protocol](https://modelcontextprotocol.io) is a standard for connecting LLMs to external data sources and tools. This package speaks MCP over stdio — your AI client (Claude Desktop, Cursor, VS Code, etc.) spawns `notebooklm-mcp serve` as a subprocess and the two communicate over JSON-RPC. The 32 tools below become callable functions in the model's tool list.
+> **New to MCP?** The [Model Context Protocol](https://modelcontextprotocol.io) is a standard for connecting LLMs to external data sources and tools. This package speaks MCP over stdio — your AI client (Claude Desktop, Cursor, VS Code, etc.) spawns `notebooklm-mcp serve` as a subprocess and the two communicate over JSON-RPC. The 27 tools below become callable functions in the model's tool list.
 
 ---
 
@@ -212,7 +212,7 @@ async with MCPServerStdio(
     },
 ) as server:
     tools = await server.list_tools()
-    print([t.name for t in tools])  # 32 tools
+    print([t.name for t in tools])  # 27 tools
 ```
 
 <details><summary>With timeout + env override</summary>
@@ -245,7 +245,7 @@ const server = new MCPServerStdio({
 
 await server.connect();
 const tools = await server.listTools();
-console.log(tools.map((t) => t.name)); // 32 tools
+console.log(tools.map((t) => t.name)); // 27 tools
 ```
 
 <details><summary>With timeout + env override</summary>
@@ -648,7 +648,7 @@ flags:   (optional)
   --debug                       # verbose stderr logging
 ```
 
-On connection the server advertises 32 tools — see the [Complete Tool Reference](#-complete-tool-reference-32) below.
+On connection the server advertises 27 tools — see the [Complete Tool Reference](#-complete-tool-reference-27) below.
 
 ---
 
@@ -674,9 +674,9 @@ Once wired up, your AI can drive NotebookLM end-to-end with natural language. Th
 | Multi-source brief | _"In my 'Climate Policy' notebook, generate a one-page briefing doc focused on IRA tax credits"_ | `report_create`, `studio_status` |
 | Studio podcast | _"Make a 10-min audio overview of my 'AI Safety Reading' notebook"_ | `audio_overview_create`, `studio_status` |
 | Deep Research → import | _"Run deep research on 'kelp aquaculture in Maine' and import the findings into my 'Climate' notebook"_ | `research_start`, `research_status`, `research_import` |
-| Cleanup | _"Delete the audio overview I generated yesterday in 'AI Safety Reading'"_ | `studio_status`, `studio_delete` |
+| Cleanup | _"Delete the 'Old Drafts' notebook I no longer need"_ | `notebook_list`, `notebook_delete` |
 
-## 🛠 Complete Tool Reference (32)
+## 🛠 Complete Tool Reference (27)
 
 Every tool is designed to work seamlessly within your AI's context window.
 
@@ -700,7 +700,6 @@ Every tool is designed to work seamlessly within your AI's context window.
 | `notebook_add_drive` | Connect and import documents, sheets, or slides from your Google Drive.                |
 | `source_describe`    | Get detailed AI analysis, summaries, and key topics for any individual source.         |
 | `source_get_content` | Extract the full underlying text of a source for processing by other AI tools.         |
-| `source_list_drive`  | List all Drive-based sources and check if they are up-to-date with the original files. |
 | `source_sync_drive`  | Sync selected Google Drive sources to pull the latest changes into NotebookLM.         |
 | `source_delete`      | Remove a specific source from your notebook.                                           |
 
@@ -712,7 +711,6 @@ Every tool is designed to work seamlessly within your AI's context window.
 | `research_status` | Track the progress of active research tasks and view discovered insights.             |
 | `research_import` | Instantly import the findings of a research task as new sources in your notebook.     |
 | `notebook_query`  | Ask complex, grounded questions. Answers are cited directly from your sources.        |
-| `chat_configure`  | Fine-tune your AI's behavior by setting specific goals or preferred response lengths. |
 
 ### 🎬 Studio (AI Content Generation)
 
@@ -725,10 +723,7 @@ Every tool is designed to work seamlessly within your AI's context window.
 | `infographic_create`    | Visualize complex data and relationships with an AI-generated infographic.               |
 | `flashcards_create`     | Generate interactive study flashcards to master your notebook's content.                 |
 | `quiz_create`           | Create a comprehensive quiz to test knowledge grounded in your provided sources.         |
-| `data_table_create`     | Extract and organize information into a structured, downloadable data table.             |
-| `mind_map_create`       | Build a visual mind map connecting the core concepts of your notebook.                   |
 | `studio_status`         | Check the generation status of your Studio artifacts and get download links.             |
-| `studio_delete`         | Clean up your workspace by deleting old Studio artifacts.                                |
 
 ### 🔑 Authentication Helpers
 

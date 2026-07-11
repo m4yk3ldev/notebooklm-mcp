@@ -100,22 +100,6 @@ export const sourceTools: McpTool<any>[] = [
     },
   },
   {
-    name: "source_list_drive",
-    description: "List sources in a notebook with Drive freshness status",
-    schema: {
-      notebook_id: z.string().describe("The notebook ID"),
-    },
-    execute: async (client, { notebook_id }) => {
-      const notebook = await client.getNotebook(notebook_id);
-      const results = [];
-      for (const src of notebook.sources) {
-        const fresh = await client.checkFreshness(src.id, notebook_id);
-        results.push({ ...src, is_fresh: fresh });
-      }
-      return { sources: results };
-    },
-  },
-  {
     name: "source_sync_drive",
     description: "Sync all Drive sources in a notebook to pull latest changes",
     schema: {

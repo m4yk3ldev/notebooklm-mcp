@@ -237,28 +237,6 @@ describe("sourceTools", () => {
     );
   });
 
-  it("source_list_drive checks freshness for each source", async () => {
-    const client = {
-      getNotebook: vi
-        .fn()
-        .mockResolvedValue({ sources: [{ id: "s1" }, { id: "s2" }] }),
-      checkFreshness: vi
-        .fn()
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(false),
-    };
-    const result = await findTool(sourceTools, "source_list_drive").execute(
-      client,
-      { notebook_id: "n1" },
-      noopOpts(),
-    );
-    expect(client.checkFreshness).toHaveBeenCalledTimes(2);
-    expect(result.sources).toEqual([
-      { id: "s1", is_fresh: true },
-      { id: "s2", is_fresh: false },
-    ]);
-  });
-
   it("source_sync_drive gates on confirm", async () => {
     const client = { syncDrive: vi.fn() };
     const result = await findTool(sourceTools, "source_sync_drive").execute(
@@ -367,29 +345,11 @@ describe("studioTools", () => {
     expect(result.artifacts).toHaveLength(1);
   });
 
-  it("studio_delete gates on confirm; deletes when true", async () => {
-    const client = { deleteStudio: vi.fn().mockResolvedValue(undefined) };
-    const gated = await findTool(studioTools, "studio_delete").execute(
-      client,
-      { notebook_id: "n1", artifact_id: "a1", confirm: false },
-      noopOpts(),
-    );
-    expect(gated.status).toBe("pending_confirmation");
-
-    await findTool(studioTools, "studio_delete").execute(
-      client,
-      { notebook_id: "n1", artifact_id: "a1", confirm: true },
-      noopOpts(),
-    );
-    expect(client.deleteStudio).toHaveBeenCalledWith("n1", "a1");
-  });
-
   it.each([
     ["video_overview_create", "createVideoOverview"],
     ["infographic_create", "createInfographic"],
     ["slide_deck_create", "createSlideDeck"],
     ["report_create", "createReport"],
-    ["mind_map_create", "createMindMap"],
   ])("%s routes to client.%s with confirm=true", async (toolName, clientMethod) => {
     const client: any = {
       getNotebook: vi.fn().mockResolvedValue({ sources: [{ id: "s" }] }),
@@ -437,31 +397,15 @@ describe("studioTools", () => {
     "report_create",
     "flashcards_create",
     "quiz_create",
-    "data_table_create",
-    "mind_map_create",
   ])("%s gates on confirm=false", async (toolName) => {
     const client: any = { getNotebook: vi.fn() };
     const args: any = { notebook_id: "n1", confirm: false };
-    if (toolName === "data_table_create") args.description = "x";
     const result = await findTool(studioTools, toolName).execute(
       client,
       args,
       noopOpts(),
     );
     expect(result.status).toBe("pending_confirmation");
-  });
-
-  it("data_table_create passes description and language", async () => {
-    const client = {
-      getNotebook: vi.fn().mockResolvedValue({ sources: [{ id: "s" }] }),
-      createDataTable: vi.fn().mockResolvedValue("art"),
-    };
-    await findTool(studioTools, "data_table_create").execute(
-      client,
-      { notebook_id: "n1", description: "foo", language: "en", confirm: true },
-      noopOpts(),
-    );
-    expect(client.createDataTable).toHaveBeenCalledWith("n1", ["s"], "foo", "en");
   });
 });
 
@@ -479,21 +423,6 @@ describe("queryTools", () => {
     );
     expect(client.query).toHaveBeenCalledWith("n1", "?", undefined, undefined);
     expect(result).toEqual({ answer: "hi", conversation_id: "c1" });
-  });
-
-  it("chat_configure forwards args", async () => {
-    const client = { chatConfigure: vi.fn().mockResolvedValue(undefined) };
-    await findTool(queryTools, "chat_configure").execute(
-      client,
-      { notebook_id: "n1", goal: "learn", response_length: "long" },
-      noopOpts(),
-    );
-    expect(client.chatConfigure).toHaveBeenCalledWith(
-      "n1",
-      "learn",
-      undefined,
-      "long",
-    );
   });
 });
 
