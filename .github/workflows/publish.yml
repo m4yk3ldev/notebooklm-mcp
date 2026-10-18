@@ -86,32 +86,21 @@ jobs:
           CI: 'true'
 
   osv-scan:
-    name: Vulnerability scan (osv-scanner)
+    name: Dependency audit (osv-scanner)
     runs-on: ubuntu-latest
     needs: [secret-scan]
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout
+        uses: actions/checkout@v6
 
-      - name: Install osv-scanner
-        env:
-          OSV_SCANNER_VERSION: 2.6.0
-          # SHA-256 of osv-scanner_linux_amd64 from upstream
-          # osv-scanner_SHA256SUMS. Bump together with OSV_SCANNER_VERSION.
-          OSV_SCANNER_SHA256: ca69b3d3cd08f889a49dc0a383122f71cc528b83803671df5fd874d97485b108
-        run: |
-          set -euo pipefail
-          bin="osv-scanner_linux_amd64"
-          curl -sSLo "$bin" \
-            "https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}/${bin}"
-          echo "${OSV_SCANNER_SHA256}  ${bin}" | sha256sum -c -
-          sudo install -m 0755 "$bin" /usr/local/bin/osv-scanner
-          osv-scanner --version
-
-      # Fails on any known vulnerability, at any severity. Accepted findings
-      # live in osv-scanner.toml with a reason and an expiry date.
-      - name: Scan pnpm-lock.yaml
-        run: osv-scanner scan source --lockfile=pnpm-lock.yaml
+      # Fails on any known vulnerability. Fix advisories (bump or override
+      # the transitive in pnpm-workspace.yaml); never add IgnoredVulns.
+      - name: Run osv-scanner
+        uses: google/osv-scanner-action/osv-scanner-action@v2.2.4
+        with:
+          scan-args: |-
+            --lockfile=pnpm-lock.yaml
 
   test:
     name: Run Tests (Node ${{ matrix.node }})

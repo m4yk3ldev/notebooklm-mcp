@@ -1,0 +1,5 @@
+# pnpm settings (pnpm 10 no longer reads the "pnpm" field in package.json).
+overrides:
+  # GHSA-g7r4-m6w7-qqqr: tsup 8 pins esbuild ^0.27; the fix is 0.28.1.
+  # Build verified with tsup 8.5.1. Drop this once tsup ships esbuild >=0.28.1.
+  esbuild: 0.28.2
