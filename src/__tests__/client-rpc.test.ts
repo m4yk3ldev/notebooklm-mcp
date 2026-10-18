@@ -669,7 +669,7 @@ describe("research RPCs", () => {
       [RPC_IDS.IMPORT_RESEARCH]: created(2),
     });
     const n = await new NotebookLMClient(tokens).importResearch("n1", "t1", [0, 2]);
-    expect(n).toEqual({ requested: 2, imported: 2 });
+    expect(n).toEqual({ requested: 2, imported: 2, skipped: 0 });
     const p = importParams(captured);
     expect(p[0]).toEqual(CLIENT_CONTEXT);
     expect(p.slice(1, 4)).toEqual([[1], "t1", "n1"]);
@@ -684,7 +684,7 @@ describe("research RPCs", () => {
       [RPC_IDS.POLL_RESEARCH]: pollWith(2, [web("https://a"), web("https://b")]),
       [RPC_IDS.IMPORT_RESEARCH]: created(2),
     });
-    expect(await new NotebookLMClient(tokens).importResearch("n1", "t1")).toEqual({ requested: 2, imported: 2 });
+    expect(await new NotebookLMClient(tokens).importResearch("n1", "t1")).toEqual({ requested: 2, imported: 2, skipped: 0 });
     expect(importParams(captured)[4]).toHaveLength(2);
   });
 
@@ -694,7 +694,7 @@ describe("research RPCs", () => {
       [RPC_IDS.POLL_RESEARCH]: pollWith(2, [web("https://a"), web("https://b"), web("https://c")]),
       [RPC_IDS.IMPORT_RESEARCH]: created(1),
     });
-    expect(await new NotebookLMClient(tokens).importResearch("n1", "t1")).toEqual({ requested: 3, imported: 1 });
+    expect(await new NotebookLMClient(tokens).importResearch("n1", "t1")).toEqual({ requested: 3, imported: 1, skipped: 0 });
   });
 
   it("importResearch retries a task whose last import failed", async () => {
@@ -702,7 +702,7 @@ describe("research RPCs", () => {
       [RPC_IDS.POLL_RESEARCH]: pollWith(7, [web("https://a")]),
       [RPC_IDS.IMPORT_RESEARCH]: created(1),
     });
-    expect(await new NotebookLMClient(tokens).importResearch("n1", "t1")).toEqual({ requested: 1, imported: 1 });
+    expect(await new NotebookLMClient(tokens).importResearch("n1", "t1")).toEqual({ requested: 1, imported: 1, skipped: 0 });
   });
 
   it("importResearch explains error 9: none of the sources could be fetched", async () => {
@@ -735,7 +735,7 @@ describe("research RPCs", () => {
       [RPC_IDS.POLL_RESEARCH]: pollWith(2, [web("https://a"), [null, "Drive doc", null, 2], web("https://b")]),
       [RPC_IDS.IMPORT_RESEARCH]: created(2),
     });
-    expect(await new NotebookLMClient(tokens).importResearch("n1", "t1")).toEqual({ requested: 2, imported: 2 });
+    expect(await new NotebookLMClient(tokens).importResearch("n1", "t1")).toEqual({ requested: 2, imported: 2, skipped: 1 });
     expect(importParams(captured)[4].map((e: any[]) => e[2][0])).toEqual(["https://a", "https://b"]);
   });
 
@@ -744,7 +744,7 @@ describe("research RPCs", () => {
       [RPC_IDS.POLL_RESEARCH]: pollWith(2, [web("https://a"), web("https://b")]),
       [RPC_IDS.IMPORT_RESEARCH]: created(1),
     });
-    expect(await new NotebookLMClient(tokens).importResearch("n1", "t1", [1, 1])).toEqual({ requested: 1, imported: 1 });
+    expect(await new NotebookLMClient(tokens).importResearch("n1", "t1", [1, 1])).toEqual({ requested: 1, imported: 1, skipped: 0 });
     expect(importParams(captured)[4]).toHaveLength(1);
   });
 
@@ -946,21 +946,30 @@ describe("refresh", () => {
     await expect(c.refreshAuth()).rejects.toThrow(/sign-in/);
   });
 
-  it("execute recovers through the auth refresh when the first landing page is signed out", async () => {
+  // A signed-out landing page must fail with a clear error and must not start
+  // the browser recovery: that kills any Chrome on the shared profile and can
+  // open a login window from an ordinary tool call.
+  it.each([
+    ["execute", (c: NotebookLMClient) => c.listNotebooks()],
+    ["query", (c: NotebookLMClient) => c.query("n1", "ask")],
+  ] as const)("%s fails on a signed-out landing page without launching a browser", async (_name, call) => {
     const authMod = await import("../auth.js");
     (authMod.extractCsrfFromPage as any).mockReturnValueOnce(null);
-    (refreshCookiesHeadless as any).mockResolvedValue({
-      cookies: tokens.cookies,
-      csrf_token: "recovered-csrf",
-      session_id: "recovered-sid",
-      extracted_at: Date.now() / 1000 + 100,
-    });
+    (refreshCookiesHeadless as any).mockClear();
+    (runBrowserAuthFlow as any).mockClear();
     const captured = mockBatchexecute({ [RPC_IDS.LIST_NOTEBOOKS]: [[]] });
-    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    await expect(new NotebookLMClient({ ...tokens, csrf_token: "", session_id: "" }).listNotebooks()).resolves.toEqual([]);
-    expect(refreshCookiesHeadless).toHaveBeenCalled();
-    expect(captured.some((c) => c.rpcId === RPC_IDS.LIST_NOTEBOOKS)).toBe(true);
-    errSpy.mockRestore();
+    await expect(call(new NotebookLMClient({ ...tokens, csrf_token: "", session_id: "" }))).rejects.toBeInstanceOf(AuthenticationError);
+    expect(refreshCookiesHeadless).not.toHaveBeenCalled();
+    expect(runBrowserAuthFlow).not.toHaveBeenCalled();
+    expect(captured.some((c) => c.rpcId === RPC_IDS.LIST_NOTEBOOKS)).toBe(false);
+  });
+
+  it("refreshAuth reports an HTTP error on the landing page as such, not as signed out", async () => {
+    server.use(http.get(`${BASE_URL}/`, () => new HttpResponse("<html>busy</html>", { status: 503, statusText: "Service Unavailable" })));
+    const c = new NotebookLMClient({ ...tokens, csrf_token: "", session_id: "" });
+    const err = await c.refreshAuth().catch((e) => e);
+    expect(err).not.toBeInstanceOf(AuthenticationError);
+    expect(String(err)).toMatch(/HTTP 503/);
   });
 
   it("query triggers refreshAuthTokens when csrfToken/sessionId initially empty", async () => {

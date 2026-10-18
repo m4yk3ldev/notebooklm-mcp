@@ -110,6 +110,7 @@ describe("studio parsers", () => {
     expect(studioArtifactId([["8647c586", "T", 2]])).toBe("8647c586");
     expect(() => studioArtifactId([])).toThrow(/no artifact id/);
     expect(() => studioArtifactId(null)).toThrow(/no artifact id/);
+    expect(() => studioArtifactId([["", "T", 2]])).toThrow(/check studio_status before retrying/);
   });
 
   it("studioTypeName splits quiz from flashcards by row[9][1][0]", () => {

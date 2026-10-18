@@ -102,7 +102,9 @@ export function sourceTypeCode(row: unknown): number | null {
 export function studioArtifactId(data: unknown): string {
   const row = Array.isArray(data) ? data[0] : null;
   if (Array.isArray(row) && typeof row[0] === "string" && row[0]) return row[0];
-  throw new Error("NotebookLM returned no artifact id; the generation may not have started.");
+  throw new Error(
+    "NotebookLM returned no artifact id. The generation may still have started: check studio_status before retrying, or a duplicate will use more quota.",
+  );
 }
 
 // Quiz and flashcards share type code 4; row[9][1][0] is the variant sent on

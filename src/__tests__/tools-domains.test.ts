@@ -476,6 +476,16 @@ describe("researchTools", () => {
     expect(client.importResearch).toHaveBeenCalledWith("n1", "t1", [0, 2]);
     expect(result.message).toBe("Imported 1 of 2 research sources");
   });
+
+  it("research_import mentions skipped Drive results", async () => {
+    const client = { importResearch: vi.fn().mockResolvedValue({ requested: 2, imported: 2, skipped: 1 }) };
+    const result = await findTool(researchTools, "research_import").execute(
+      client,
+      { notebook_id: "n1", task_id: "t1" },
+      noopOpts(),
+    );
+    expect(result.message).toBe("Imported 2 of 2 research sources (skipped 1 Drive result that can't be imported)");
+  });
 });
 
 describe("authTools", () => {

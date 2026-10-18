@@ -38,8 +38,9 @@ export const researchTools: McpTool<any>[] = [
       source_indices: z.array(z.number()).optional().describe("Indices into the task's sources as listed by research_status (omit to import every web result)"),
     },
     execute: async (client, { notebook_id, task_id, source_indices }) => {
-      const { requested, imported } = await client.importResearch(notebook_id, task_id, source_indices);
-      return { message: `Imported ${imported} of ${requested} research sources` };
+      const { requested, imported, skipped } = await client.importResearch(notebook_id, task_id, source_indices);
+      const note = skipped ? ` (skipped ${skipped} Drive result${skipped === 1 ? "" : "s"} that can't be imported)` : "";
+      return { message: `Imported ${imported} of ${requested} research sources${note}` };
     },
   },
 ];

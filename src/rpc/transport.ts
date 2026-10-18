@@ -213,6 +213,10 @@ export class RpcTransport {
         signal: controller.signal,
       });
 
+      // A 5xx/429 must not read as "signed out" further up.
+      if (!response.ok) {
+        throw new Error(`NotebookLM landing page returned HTTP ${response.status} ${response.statusText}`);
+      }
       return { html: await response.text(), url: response.url };
     } finally {
       clearTimeout(timer);

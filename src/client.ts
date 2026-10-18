@@ -125,13 +125,14 @@ export class NotebookLMClient {
     timeout: number = DEFAULT_TIMEOUT,
     isRetry = false,
   ): Promise<unknown> {
-    try {
-      // If CSRF or SID are missing, try to extract them first. Inside the try
-      // so a signed-out landing page goes through the recovery below.
-      if (!this.auth.csrfToken || !this.auth.sessionId) {
-        await this.refreshAuthTokens();
-      }
+    // If CSRF or SID are missing, try to extract them first. Deliberately
+    // outside the try: a signed-out landing page must fail clearly, not start
+    // the browser recovery (it kills Chrome on the shared profile).
+    if (!this.auth.csrfToken || !this.auth.sessionId) {
+      await this.refreshAuthTokens();
+    }
 
+    try {
       const envelopes = await this.transport.callBatchexecute(
         rpcId,
         params,
@@ -175,9 +176,9 @@ export class NotebookLMClient {
 
   private async refreshAuthTokens(): Promise<void> {
     const { html, url } = await this.transport.fetchLandingHtml(DEFAULT_TIMEOUT);
-    if (url && !isNotebookLmUrl(url)) {
+    if (!isNotebookLmUrl(url)) {
       throw new AuthenticationError(
-        `NotebookLM redirected to ${new URL(url).hostname} (Google sign-in): the session is signed out. Run \`npx @m4ykeldev/notebooklm-mcp auth\` to re-authenticate.`,
+        `NotebookLM redirected to ${url || "an unknown page"} (Google sign-in): the session is signed out. Run \`npx @m4ykeldev/notebooklm-mcp auth\` to re-authenticate.`,
       );
     }
     const csrf = extractCsrfFromPage(html);
@@ -492,6 +493,11 @@ export class NotebookLMClient {
     conversationId?: string,
     isRetry = false,
   ): Promise<QueryResponse> {
+    // Outside the try for the same reason as in execute().
+    if (!this.auth.csrfToken || !this.auth.sessionId) {
+      await this.refreshAuthTokens();
+    }
+
     const history = conversationId
       ? this.conversationHistory.get(conversationId) || []
       : [];
@@ -512,11 +518,6 @@ export class NotebookLMClient {
     ];
 
     try {
-      // Inside the try so a signed-out landing page goes through the recovery below.
-      if (!this.auth.csrfToken || !this.auth.sessionId) {
-        await this.refreshAuthTokens();
-      }
-
       const fReq = JSON.stringify([null, JSON.stringify(params)]);
       const bodyParts = [`f.req=${encodeURIComponent(fReq)}`];
       if (this.auth.csrfToken) {
@@ -718,7 +719,7 @@ export class NotebookLMClient {
     notebookId: string,
     taskId: string,
     sourceIndices?: number[],
-  ): Promise<{ requested: number; imported: number }> {
+  ): Promise<{ requested: number; imported: number; skipped: number }> {
     const task = (await this.pollResearch(notebookId, taskId))[0];
     if (!task) {
       throw new Error(`Research task ${taskId} not found in notebook ${notebookId}.`);
@@ -730,6 +731,7 @@ export class NotebookLMClient {
     // URL and their import shape is unknown. Without indices, import the web
     // results; with indices, refuse a Drive result rather than skip it.
     let picked: ResearchSource[];
+    let skipped = 0;
     if (sourceIndices) {
       if (sourceIndices.length === 0) {
         throw new Error("source_indices must list at least one index; omit it to import every web result.");
@@ -747,6 +749,7 @@ export class NotebookLMClient {
       }
     } else {
       picked = task.sources.filter((s) => s.url);
+      skipped = task.sources.length - picked.length;
       if (picked.length === 0) {
         throw new Error(`Research task ${taskId} has no web results to import.`);
       }
@@ -775,7 +778,7 @@ export class NotebookLMClient {
     if (!Array.isArray(createdSources)) {
       throw new Error("NotebookLM returned an unexpected response to the import; check the notebook before retrying.");
     }
-    return { requested: entries.length, imported: createdSources.length };
+    return { requested: entries.length, imported: createdSources.length, skipped };
   }
 
   // ─── Studio Methods ──────────────────────────────────

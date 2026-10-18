@@ -194,9 +194,9 @@ export function cookieAppliesToBase(domain: unknown): boolean {
 }
 
 /**
- * Name → value for the cookies the browser would send to `BASE_URL`. When a
- * name exists both host-only and domain-wide, the host-only copy wins, as it
- * would in the browser's own Cookie header ordering.
+ * Name → value for the cookies that apply to `BASE_URL`. A browser would send
+ * every same-named copy; we keep one per name, preferring the host-only copy
+ * (a heuristic: the most specific cookie is the one set for NotebookLM).
  */
 export function cookiesForBase(list: { name: string; value: string; domain?: string }[]): Record<string, string> {
   const host = new URL(BASE_URL).hostname;
