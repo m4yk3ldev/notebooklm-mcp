@@ -29,6 +29,8 @@ import {
   FLASHCARD_DIFFICULTIES,
   FLASHCARD_COUNT_DEFAULT,
   REPORT_FORMATS,
+  CLIENT_CONTEXT,
+  isNotebookLmUrl,
 } from "./constants.js";
 import {
   extractCsrfFromPage,
@@ -36,12 +38,28 @@ import {
 } from "./auth.js";
 import { AuthState } from "./rpc/auth-state.js";
 import { RpcTransport } from "./rpc/transport.js";
-import { extractTextFromBlocks as extractWireText } from "./rpc/wire.js";
+import {
+  extractTextFromBlocks as extractWireText,
+  sourceTypeCode,
+  studioArtifactId,
+  studioDownloadUrl,
+  studioTypeName,
+} from "./rpc/wire.js";
 
 export class AuthenticationError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "AuthenticationError";
+  }
+}
+
+export class RpcError extends Error {
+  constructor(
+    rpcId: string,
+    readonly codes: unknown[],
+  ) {
+    super(`NotebookLM RPC ${rpcId} failed with error code(s) ${JSON.stringify(codes)}`);
+    this.name = "RpcError";
   }
 }
 
@@ -82,9 +100,7 @@ export class NotebookLMClient {
                 "Authentication expired. Run `npx @m4ykeldev/notebooklm-mcp auth` to re-authenticate.",
               );
             }
-            throw new Error(
-              `NotebookLM RPC ${rpcId} failed with error code(s) ${JSON.stringify(errorCodes)}`,
-            );
+            throw new RpcError(rpcId, errorCodes);
           }
 
           const resultStr = item[2];
@@ -109,7 +125,9 @@ export class NotebookLMClient {
     timeout: number = DEFAULT_TIMEOUT,
     isRetry = false,
   ): Promise<unknown> {
-    // If CSRF or SID are missing, try to extract them first
+    // If CSRF or SID are missing, try to extract them first. Deliberately
+    // outside the try: a signed-out landing page must fail clearly, not start
+    // the browser recovery (it kills Chrome on the shared profile).
     if (!this.auth.csrfToken || !this.auth.sessionId) {
       await this.refreshAuthTokens();
     }
@@ -157,16 +175,22 @@ export class NotebookLMClient {
   }
 
   private async refreshAuthTokens(): Promise<void> {
-    const html = await this.transport.fetchLandingHtml(DEFAULT_TIMEOUT);
+    const { html, url } = await this.transport.fetchLandingHtml(DEFAULT_TIMEOUT);
+    if (!isNotebookLmUrl(url)) {
+      throw new AuthenticationError(
+        `NotebookLM redirected to ${url || "an unknown page"} (Google sign-in): the session is signed out. Run \`npx @m4ykeldev/notebooklm-mcp auth\` to re-authenticate.`,
+      );
+    }
     const csrf = extractCsrfFromPage(html);
     const sid = extractSessionIdFromPage(html);
 
-    if (csrf) {
-      this.auth.recordCsrfToken(csrf);
-      console.error("✅ New CSRF token extracted.");
-    } else {
-      console.error("⚠️ Failed to extract CSRF token from page.");
+    if (!csrf) {
+      throw new AuthenticationError(
+        "NotebookLM page has no CSRF token: the session is likely signed out. Run `npx @m4ykeldev/notebooklm-mcp auth` to re-authenticate.",
+      );
     }
+    this.auth.recordCsrfToken(csrf);
+    console.error("✅ New CSRF token extracted.");
 
     if (sid) {
       this.auth.recordSessionId(sid);
@@ -205,7 +229,7 @@ export class NotebookLMClient {
           sources.push({
             id: Array.isArray(s[0]) ? s[0][0] : String(s[0]),
             title: s[1] || "Untitled",
-            type: SOURCE_TYPES.getName(s[3] ?? null),
+            type: SOURCE_TYPES.getName(sourceTypeCode(s)),
           });
         }
       }
@@ -415,7 +439,7 @@ export class NotebookLMClient {
     return {
       id: sourceId,
       title: meta?.[1] || "Untitled",
-      type: SOURCE_TYPES.getName(Array.isArray(meta?.[3]) ? meta[3][1] : meta?.[3]),
+      type: SOURCE_TYPES.getName(sourceTypeCode(meta)),
       content: extractWireText(data?.[3]),
       summary: null,
       keywords: [],
@@ -469,7 +493,7 @@ export class NotebookLMClient {
     conversationId?: string,
     isRetry = false,
   ): Promise<QueryResponse> {
-    // If CSRF or SID are missing, try to extract them first
+    // Outside the try for the same reason as in execute().
     if (!this.auth.csrfToken || !this.auth.sessionId) {
       await this.refreshAuthTokens();
     }
@@ -478,16 +502,14 @@ export class NotebookLMClient {
       ? this.conversationHistory.get(conversationId) || []
       : [];
 
-    const sourcesNested = sourceIds
-      ? sourceIds.map((sid) => [[[sid]]])
-      : [];
+    const sourcesNested = sourceIds ? sourceIds.map((sid) => [[sid]]) : [];
 
     // Discovered format: [sources, query, history, config, convId, null, null, notebookId, 1]
     const params = [
       sourcesNested,
       queryText,
       history,
-      [2, null, [1], [1]],
+      CLIENT_CONTEXT,
       conversationId || null,
       null,
       null,
@@ -537,14 +559,13 @@ export class NotebookLMClient {
               try {
                 const data = JSON.parse(resultStr);
                 if (Array.isArray(data) && Array.isArray(data[0])) {
-                  // Format: [[answer, null, [sources], null, [formatting]], ...]
+                  // Format: [[answer, null, [convId, messageId, n], null, [formatting]], ...]
                   const inner = data[0];
                   const answer = inner[0];
                   if (typeof answer === "string" && answer.length > bestAnswer.length) {
                     bestAnswer = answer;
                   }
-                  // Conversation ID is usually in the meta block of the first element
-                  if (inner[10]) convId = String(inner[10]);
+                  if (Array.isArray(inner[2]) && typeof inner[2][0] === "string") convId = inner[2][0];
                 }
               } catch {
                 // skip
@@ -556,10 +577,12 @@ export class NotebookLMClient {
 
       // Store history for next turn
       if (convId && bestAnswer) {
-        const turnHistory = this.conversationHistory.get(convId) || [];
-        turnHistory.push([queryText, null, 1]);
-        turnHistory.push([bestAnswer, null, 2]);
-        this.conversationHistory.set(convId, turnHistory.slice(-10)); // Keep last 10 turns
+        const previous = this.conversationHistory.get(convId) || [];
+        // Newest turn first, answer before question — the order the web app sends.
+        this.conversationHistory.set(
+          convId,
+          [[bestAnswer, null, 2], [queryText, null, 1], ...previous].slice(0, 10),
+        );
       }
 
       return {
@@ -661,6 +684,8 @@ export class NotebookLMClient {
         1: "in_progress",
         2: "completed",
         6: "imported",
+        // Seen after an import that created no source; the task can be imported again.
+        7: "import_failed",
       };
 
       const sources: ResearchSource[] = [];
@@ -694,14 +719,66 @@ export class NotebookLMClient {
     notebookId: string,
     taskId: string,
     sourceIndices?: number[],
-  ): Promise<void> {
-    const indices = sourceIndices || null;
-    await this.execute(
-      RPC_IDS.IMPORT_RESEARCH,
-      [notebookId, taskId, indices],
-      `/notebook/${notebookId}`,
-      EXTENDED_TIMEOUT,
-    );
+  ): Promise<{ requested: number; imported: number; skipped: number }> {
+    const task = (await this.pollResearch(notebookId, taskId))[0];
+    if (!task) {
+      throw new Error(`Research task ${taskId} not found in notebook ${notebookId}.`);
+    }
+    if (task.status === "in_progress") {
+      throw new Error(`Research task ${taskId} is still running; wait until research_status reports "completed".`);
+    }
+    // Only web results have been observed on the wire; Drive results carry no
+    // URL and their import shape is unknown. Without indices, import the web
+    // results; with indices, refuse a Drive result rather than skip it.
+    let picked: ResearchSource[];
+    let skipped = 0;
+    if (sourceIndices) {
+      if (sourceIndices.length === 0) {
+        throw new Error("source_indices must list at least one index; omit it to import every web result.");
+      }
+      picked = [...new Set(sourceIndices)].map((i) => {
+        const s = task.sources[i];
+        if (!s) {
+          throw new Error(`Source index ${i} out of range (task has ${task.sources.length} sources).`);
+        }
+        return s;
+      });
+      const withoutUrl = picked.filter((s) => !s.url).length;
+      if (withoutUrl > 0) {
+        throw new Error(`Only web results can be imported; ${withoutUrl} selected source(s) have no URL.`);
+      }
+    } else {
+      picked = task.sources.filter((s) => s.url);
+      skipped = task.sources.length - picked.length;
+      if (picked.length === 0) {
+        throw new Error(`Research task ${taskId} has no web results to import.`);
+      }
+    }
+    // Entry shape recorded from the web app (2026-10).
+    const entries = picked.map((s) => [null, null, [s.url, s.title], null, null, null, null, null, null, null, 2]);
+    // NotebookLM fetches each URL on import and drops the ones it can't reach;
+    // when none succeed the whole call fails with code 9.
+    let result: unknown;
+    try {
+      result = await this.execute(
+        RPC_IDS.IMPORT_RESEARCH,
+        [CLIENT_CONTEXT, [1], taskId, notebookId, entries],
+        `/notebook/${notebookId}`,
+        EXTENDED_TIMEOUT,
+      );
+    } catch (e) {
+      if (e instanceof RpcError && e.codes.includes(9)) {
+        throw new Error(
+          `NotebookLM could not fetch any of the ${entries.length} selected source(s). These failures are often transient: retry, or pick other results.`,
+        );
+      }
+      throw e;
+    }
+    const createdSources = Array.isArray(result) ? result[0] : null;
+    if (!Array.isArray(createdSources)) {
+      throw new Error("NotebookLM returned an unexpected response to the import; check the notebook before retrying.");
+    }
+    return { requested: entries.length, imported: createdSources.length, skipped };
   }
 
   // ─── Studio Methods ──────────────────────────────────
@@ -757,8 +834,7 @@ export class NotebookLMClient {
       [[2], notebookId, content],
       `/notebook/${notebookId}`,
     );
-    const data = result as any[];
-    return data?.[0] || "";
+    return studioArtifactId(result);
   }
 
   async createVideoOverview(
@@ -808,8 +884,7 @@ export class NotebookLMClient {
       [[2], notebookId, content],
       `/notebook/${notebookId}`,
     );
-    const data = result as any[];
-    return data?.[0] || "";
+    return studioArtifactId(result);
   }
 
   async createInfographic(
@@ -855,8 +930,7 @@ export class NotebookLMClient {
       [[2], notebookId, content],
       `/notebook/${notebookId}`,
     );
-    const data = result as any[];
-    return data?.[0] || "";
+    return studioArtifactId(result);
   }
 
   async createSlideDeck(
@@ -899,8 +973,7 @@ export class NotebookLMClient {
       [[2], notebookId, content],
       `/notebook/${notebookId}`,
     );
-    const data = result as any[];
-    return data?.[0] || "";
+    return studioArtifactId(result);
   }
 
   async createReport(
@@ -952,8 +1025,7 @@ export class NotebookLMClient {
       [[2], notebookId, content],
       `/notebook/${notebookId}`,
     );
-    const data = result as any[];
-    return data?.[0] || "";
+    return studioArtifactId(result);
   }
 
   async createFlashcards(
@@ -987,8 +1059,7 @@ export class NotebookLMClient {
       [[2], notebookId, content],
       `/notebook/${notebookId}`,
     );
-    const data = result as any[];
-    return data?.[0] || "";
+    return studioArtifactId(result);
   }
 
   async createQuiz(
@@ -1023,8 +1094,7 @@ export class NotebookLMClient {
       [[2], notebookId, content],
       `/notebook/${notebookId}`,
     );
-    const data = result as any[];
-    return data?.[0] || "";
+    return studioArtifactId(result);
   }
 
   async pollStudio(notebookId: string): Promise<StudioArtifact[]> {
@@ -1049,12 +1119,11 @@ export class NotebookLMClient {
         4: "failed",
       };
 
-      // Google format: [id, title, type, sources, status, ...]
       artifacts.push({
         id: item[0] || "",
-        type: STUDIO_TYPES.getName(item[2] ?? null),
+        type: studioTypeName(item),
         status: statusMap[item[4]] || "pending",
-        download_url: item[5] || null,
+        download_url: studioDownloadUrl(item),
       });
     }
 

@@ -127,7 +127,7 @@ export async function runFileImport(filePath?: string): Promise<AuthTokens> {
   if (!filePath) {
     console.log(`
 To authenticate via file:
-1. Open Chrome and navigate to https://notebooklm.google.com
+1. Open Chrome and navigate to ${BASE_URL}
 2. Open DevTools (F12) > Network tab
 3. Type "batchexecute" in the filter
 4. Click on any batchexecute request

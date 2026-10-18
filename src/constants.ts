@@ -88,6 +88,7 @@ export const SOURCE_TYPES = new CodeMapper({
   web_page: 5,
   generated_text: 8,
   youtube: 9,
+  media: 10,
   uploaded_file: 11,
   image: 13,
   word_doc: 14,
@@ -194,11 +195,28 @@ export const REPORT_FORMATS: Record<
   },
 };
 
-// Base URL
-export const BASE_URL = "https://notebooklm.google.com";
+// Base URL. Google moved NotebookLM to notebook.google.com (2026-10); the old
+// host now 301s there. Requests must target the new host directly: a
+// cross-origin redirect makes fetch drop the Cookie header.
+export const BASE_URL = "https://notebook.google.com";
+export const LEGACY_BASE_URL = "https://notebooklm.google.com";
+
+/** True when `url` is a page on NotebookLM (current or legacy host). */
+export function isNotebookLmUrl(url: unknown): boolean {
+  if (typeof url !== "string") return false;
+  try {
+    const { origin } = new URL(url);
+    return origin === BASE_URL || origin === LEGACY_BASE_URL;
+  } catch {
+    return false;
+  }
+}
 export const BATCHEXECUTE_PATH = "/_/LabsTailwindUi/data/batchexecute";
 export const QUERY_PATH =
   "/_/LabsTailwindUi/data/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateFreeFormStreamed";
+
+// Request context the web app sends with queries and research import (2026-10).
+export const CLIENT_CONTEXT = [2, null, [1], [1, null, null, null, null, null, null, null, null, null, [1, 3]]];
 
 export const DEFAULT_BL = "boq_labs-tailwind-frontend_20260419.02_p0";
 

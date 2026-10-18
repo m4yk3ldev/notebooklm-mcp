@@ -31,15 +31,16 @@ export const researchTools: McpTool<any>[] = [
   },
   {
     name: "research_import",
-    description: "Import discovered sources from a research task into the notebook",
+    description: "Import discovered sources from a research task into the notebook. NotebookLM fetches each URL and skips the ones it can't reach, so the result reports how many of the requested sources were imported.",
     schema: {
       notebook_id: z.string().describe("The notebook ID"),
       task_id: z.string().describe("Research task ID"),
-      source_indices: z.array(z.number()).optional().describe("Specific source indices to import (omit for all)"),
+      source_indices: z.array(z.number()).optional().describe("Indices into the task's sources as listed by research_status (omit to import every web result)"),
     },
     execute: async (client, { notebook_id, task_id, source_indices }) => {
-      await client.importResearch(notebook_id, task_id, source_indices);
-      return { message: "Research sources imported" };
+      const { requested, imported, skipped } = await client.importResearch(notebook_id, task_id, source_indices);
+      const note = skipped ? ` (skipped ${skipped} Drive result${skipped === 1 ? "" : "s"} that can't be imported)` : "";
+      return { message: `Imported ${imported} of ${requested} research sources${note}` };
     },
   },
 ];

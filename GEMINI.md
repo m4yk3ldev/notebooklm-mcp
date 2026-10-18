@@ -3,10 +3,10 @@
 This file provides the foundational context, architecture, and engineering standards for the NotebookLM MCP Server project.
 
 ## Project Overview
-The NotebookLM MCP Server is a [Model Context Protocol (MCP)](https://modelcontextprotocol.io) implementation that exposes the capabilities of [Google NotebookLM](https://notebooklm.google.com) to AI models. It facilitates deep integration of NotebookLM's notebook management, source ingestion, RAG-based querying, and studio content generation into AI-assisted workflows.
+The NotebookLM MCP Server is a [Model Context Protocol (MCP)](https://modelcontextprotocol.io) implementation that exposes the capabilities of [Google NotebookLM](https://notebook.google.com) to AI models. It facilitates deep integration of NotebookLM's notebook management, source ingestion, RAG-based querying, and studio content generation into AI-assisted workflows.
 
 ### Key Technologies
-- **Runtime**: Node.js (>=18)
+- **Runtime**: Node.js (>=20)
 - **Language**: TypeScript (strict)
 - **Package manager**: **pnpm** (pinned via `packageManager: "pnpm@10.33.0"`; use `corepack enable && pnpm install`)
 - **Framework**: `@modelcontextprotocol/sdk`
@@ -27,7 +27,7 @@ The project follows a modular SRP-respecting architecture centered around the MC
 - **RPC layer** (extracted 2026-05-17):
   - `src/rpc/transport.ts`: `RpcTransport` — HTTP POST/GET to batchexecute and query endpoints. Enforces `response.ok`, merges Set-Cookie via `AuthState`, wraps `response.text()` in a race-with-abort so slow bodies actually honor the timeout.
   - `src/rpc/auth-state.ts`: `AuthState` — owns tokens / csrfToken / sessionId / cookies. Provides a single-flight `refreshOnce()` mutex (concurrent callers share one refresh), `reloadIfNewer()` disk pickup, and persisted `recordSessionId` / `recordCsrfToken` / `recordSetCookies` writes.
-  - `src/rpc/wire.ts`: Pure parsers — `parseResponse` (batchexecute envelope) and `extractTextFromBlocks`.
+  - `src/rpc/wire.ts`: Pure parsers — `parseResponse` (batchexecute envelope), `extractTextFromBlocks` (source content incl. tables), `sourceTypeCode`, and the studio parsers `studioArtifactId` / `studioTypeName` / `studioDownloadUrl`.
 - **Tools**:
   - `src/tools/`: Directory containing modular tool definitions (e.g., `notebook.ts`, `source.ts`, `query.ts`, `studio.ts`).
   - `src/tools/index.ts`: Central registration point; also exports `resolveSourceIds()` (used by 9 studio tools) and `clientResetSignal()` (typed replacement for the legacy `_client_action: "reset"` string).
@@ -63,6 +63,8 @@ The server uses cookie-based authentication.
 - **Cache**: Tokens are stored at `~/.notebooklm-mcp/auth.json` (mode `0600`) inside `~/.notebooklm-mcp/` (mode `0700`).
 - **Dedicated Profile**: Automated auth uses a persistent profile at `~/.notebooklm-mcp/chrome-profile` (mode `0700`).
 - **Refresh mutex**: when several concurrent RPCs hit `AuthenticationError` at the same time, only the first one spawns the headless/manual Chrome flow; the rest await the same `AuthState.refreshOnce()` promise.
+- **Host**: NotebookLM lives at `notebook.google.com` (`BASE_URL`); the legacy `notebooklm.google.com` 301s there. Cookies are filtered per host (`cookiesForBase`), because `OSID` is host-only.
+- **Signed-out sessions**: If the landing page ends outside NotebookLM (Google sign-in) or has no CSRF token, `refreshAuthTokens` throws `AuthenticationError` telling the user to run `auth`. That check runs before the recovery `try` in `execute()`/`query()` on purpose: a signed-out session must not start the headless/visible-browser recovery, which kills any Chrome on the shared profile. Recovery still runs for RPC-level auth failures (error code 16). A non-2xx landing page is a plain HTTP error.
 
 ## Engineering Standards & Conventions
 
@@ -85,10 +87,10 @@ The server uses cookie-based authentication.
 - `src/client.ts`: Domain facade — `NotebookLMClient`. Composes the `rpc/*` collaborators; one public method per Google capability.
 - `src/rpc/transport.ts`: `RpcTransport` — HTTP transport (fetch + abort + body race + status check + Set-Cookie merge).
 - `src/rpc/auth-state.ts`: `AuthState` — token / csrf / session state, single-flight refresh mutex, disk reload.
-- `src/rpc/wire.ts`: Pure batchexecute envelope parsers.
+- `src/rpc/wire.ts`: Pure parsers for the batchexecute envelope, source content and studio artifacts.
 - `src/server.ts`: Server configuration and tool mounting.
 - `src/constants.ts`: Contains RPC IDs, URLs, and default configuration values.
 - `src/types.ts`: Shared TypeScript interfaces and types.
-- `src/tools/`: Implementations of the 32 available tools.
+- `src/tools/`: Implementations of the 27 available tools.
 - `docs/plans/`: Implementation plans, including the 2026-05-17 modular refactor.
 - `docs/audits/`: Audit reports (multi-focus 6-agent audit, 2026-05-17).

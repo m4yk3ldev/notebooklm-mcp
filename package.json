@@ -19,7 +19,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "packageManager": "pnpm@10.33.0",
   "keywords": [
@@ -45,7 +45,7 @@
     "provenance": true
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.29.0",
+    "@modelcontextprotocol/sdk": "1.32.1",
     "commander": "12.1.0",
     "ws": "8.21.0",
     "zod": "3.25.76"
@@ -53,10 +53,10 @@
   "devDependencies": {
     "@types/node": "20.19.33",
     "@types/ws": "8.5.14",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "4.1.11",
     "msw": "2.12.10",
     "tsup": "8.5.1",
     "typescript": "5.9.3",
-    "vitest": "4.1.9"
+    "vitest": "4.1.11"
   }
 }

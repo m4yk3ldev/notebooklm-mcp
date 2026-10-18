@@ -85,11 +85,33 @@ jobs:
         env:
           CI: 'true'
 
-  test:
-    name: Run Tests
+  osv-scan:
+    name: Dependency audit (osv-scanner)
     runs-on: ubuntu-latest
-    needs: [audit]
+    needs: [secret-scan]
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # Fails on any known vulnerability. Fix advisories (bump or override
+      # the transitive in pnpm-workspace.yaml); never add IgnoredVulns.
+      - name: Run osv-scanner
+        uses: google/osv-scanner-action/osv-scanner-action@v2.2.4
+        with:
+          scan-args: |-
+            --lockfile=pnpm-lock.yaml
+
+  test:
+    name: Run Tests (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    needs: [audit, osv-scan]
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # 20 is the floor declared in package.json#engines; keep them in sync.
+        node: ['20', '22', '24']
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v4
@@ -97,7 +119,7 @@ jobs:
           version: 10.33.0
       - uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build
