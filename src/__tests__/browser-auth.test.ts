@@ -78,6 +78,7 @@ vi.mock("../auth.js", () => ({
 }));
 
 import {
+  cookieAppliesToBase,
   findChrome,
   launchChrome,
   refreshCookiesHeadless,
@@ -424,8 +425,8 @@ describe("runBrowserAuthFlow / refreshCookiesHeadless success paths", () => {
         id: 1,
         result: {
           cookies: [
-            { name: "SID", value: "a" },
-            { name: "HSID", value: "b" },
+            { name: "SID", value: "a", domain: ".google.com" },
+            { name: "HSID", value: "b", domain: ".google.com" },
           ],
         },
       })));
@@ -467,7 +468,7 @@ describe("runBrowserAuthFlow / refreshCookiesHeadless success paths", () => {
 
     setTimeout(() => {
       ws.emit("message", Buffer.from(JSON.stringify({
-        result: { cookies: [{ name: "SID", value: "a" }] },
+        result: { cookies: [{ name: "SID", value: "a", domain: ".google.com" }] },
       })));
     }, 10);
 
@@ -476,7 +477,7 @@ describe("runBrowserAuthFlow / refreshCookiesHeadless success paths", () => {
         result: {
           result: {
             value: JSON.stringify({
-              href: "https://notebooklm.google.com/",
+              href: "https://notebook.google.com/",
               csrf: "c",
               sid: "s",
               bl: "bl",
@@ -527,7 +528,7 @@ describe("runBrowserAuthFlow error paths", () => {
     // cookies ok
     setTimeout(() => {
       ws.emit("message", Buffer.from(JSON.stringify({
-        result: { cookies: [{ name: "SID", value: "a" }] },
+        result: { cookies: [{ name: "SID", value: "a", domain: ".google.com" }] },
       })));
     }, 10);
 
@@ -549,7 +550,7 @@ describe("runBrowserAuthFlow error paths", () => {
     // cookies ok again
     setTimeout(() => {
       ws.emit("message", Buffer.from(JSON.stringify({
-        result: { cookies: [{ name: "SID", value: "a" }] },
+        result: { cookies: [{ name: "SID", value: "a", domain: ".google.com" }] },
       })));
     }, 30);
 
@@ -584,7 +585,7 @@ describe("runBrowserAuthFlow error paths", () => {
       ws.emit("open");
       setTimeout(() => {
         ws.emit("message", Buffer.from(JSON.stringify({
-          result: { cookies: [{ name: "SID", value: "a" }] },
+          result: { cookies: [{ name: "SID", value: "a", domain: ".google.com" }] },
         })));
       }, 10);
       // On the Google chooser → debug line should fire.
@@ -596,7 +597,7 @@ describe("runBrowserAuthFlow error paths", () => {
       // Then land on NotebookLM so the flow settles.
       setTimeout(() => {
         ws.emit("message", Buffer.from(JSON.stringify({
-          result: { cookies: [{ name: "SID", value: "a" }] },
+          result: { cookies: [{ name: "SID", value: "a", domain: ".google.com" }] },
         })));
       }, 30);
       setTimeout(() => {
@@ -631,7 +632,7 @@ describe("runBrowserAuthFlow error paths", () => {
     ws.emit("open");
     setTimeout(() => {
       ws.emit("message", Buffer.from(JSON.stringify({
-        result: { cookies: [{ name: "SID", value: "a" }] },
+        result: { cookies: [{ name: "SID", value: "a", domain: ".google.com" }] },
       })));
     }, 10);
     setTimeout(() => {
@@ -657,7 +658,7 @@ describe("runBrowserAuthFlow error paths", () => {
     ws.emit("open");
     setTimeout(() => {
       ws.emit("message", Buffer.from(JSON.stringify({
-        result: { cookies: [{ name: "SID", value: "a" }] },
+        result: { cookies: [{ name: "SID", value: "a", domain: ".google.com" }] },
       })));
     }, 10);
     setTimeout(() => {
@@ -689,7 +690,7 @@ describe("runBrowserAuthFlow error paths", () => {
     ws.emit("open");
     setTimeout(() => {
       ws.emit("message", Buffer.from(JSON.stringify({
-        result: { cookies: [{ name: "SID", value: "a" }] },
+        result: { cookies: [{ name: "SID", value: "a", domain: ".google.com" }] },
       })));
     }, 10);
     setTimeout(() => {
@@ -720,7 +721,7 @@ describe("runBrowserAuthFlow error paths", () => {
     ws.emit("open");
     setTimeout(() => {
       ws.emit("message", Buffer.from(JSON.stringify({
-        result: { cookies: [{ name: "SID", value: "a" }] },
+        result: { cookies: [{ name: "SID", value: "a", domain: ".google.com" }] },
       })));
     }, 10);
     setTimeout(() => {
@@ -740,12 +741,12 @@ describe("runBrowserAuthFlow error paths", () => {
 
     setTimeout(() => {
       ws.emit("message", Buffer.from(JSON.stringify({
-        result: { cookies: [{ name: "SID", value: "partial" }] },
+        result: { cookies: [{ name: "SID", value: "partial", domain: ".google.com" }] },
       })));
     }, 10);
     setTimeout(() => {
       ws.emit("message", Buffer.from(JSON.stringify({
-        result: { cookies: [{ name: "SID", value: "a" }] },
+        result: { cookies: [{ name: "SID", value: "a", domain: ".google.com" }] },
       })));
     }, 20);
     setTimeout(() => {
@@ -789,7 +790,7 @@ describe("runBrowserAuthFlow error paths", () => {
     ws.readyState = 1;
     setTimeout(() => {
       ws.emit("message", Buffer.from(JSON.stringify({
-        result: { cookies: [{ name: "SID", value: "a" }] },
+        result: { cookies: [{ name: "SID", value: "a", domain: ".google.com" }] },
       })));
     }, 10);
     setTimeout(() => {
@@ -809,7 +810,7 @@ describe("runBrowserAuthFlow error paths", () => {
     ws.emit("open");
     setTimeout(() => {
       ws.emit("message", Buffer.from(JSON.stringify({
-        result: { cookies: [{ name: "SID", value: "a" }] },
+        result: { cookies: [{ name: "SID", value: "a", domain: ".google.com" }] },
       })));
     }, 10);
     setTimeout(() => {
@@ -858,7 +859,7 @@ describe("runBrowserAuthFlow error paths", () => {
     setTimeout(() => ws.emit("message", Buffer.from(JSON.stringify({ error: { message: "foo" } }))), 15);
     setTimeout(() => {
       ws.emit("message", Buffer.from(JSON.stringify({
-        result: { cookies: [{ name: "SID", value: "a" }] },
+        result: { cookies: [{ name: "SID", value: "a", domain: ".google.com" }] },
       })));
     }, 20);
     setTimeout(() => {
@@ -869,4 +870,19 @@ describe("runBrowserAuthFlow error paths", () => {
 
     await expect(promise).resolves.toBeDefined();
   }, 10000);
+});
+
+describe("cookieAppliesToBase", () => {
+  it("keeps parent-domain and exact-host cookies for notebook.google.com", () => {
+    expect(cookieAppliesToBase(".google.com")).toBe(true);
+    expect(cookieAppliesToBase("notebook.google.com")).toBe(true);
+    expect(cookieAppliesToBase(".notebook.google.com")).toBe(true);
+  });
+
+  it("drops host-only cookies of other Google hosts", () => {
+    expect(cookieAppliesToBase("notebooklm.google.com")).toBe(false);
+    expect(cookieAppliesToBase("accounts.google.com")).toBe(false);
+    expect(cookieAppliesToBase(".youtube.com")).toBe(false);
+    expect(cookieAppliesToBase(undefined)).toBe(false);
+  });
 });

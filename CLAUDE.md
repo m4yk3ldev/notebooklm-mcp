@@ -109,7 +109,7 @@ For operations that take a long time (studio generation, deep research, polling)
 
 Token resolution order: `NOTEBOOKLM_COOKIES` env var → `~/.notebooklm-mcp/auth.json` → error.
 
-Automated auth uses Chrome DevTools Protocol (CDP) on port 9229. `browser-auth.ts` launches Chrome with `--remote-debugging-port`, connects via WebSocket, and polls `Network.getCookies` until the required cookies (`SID`, `HSID`, `SSID`, `APISID`, `SAPISID`) appear.
+Automated auth uses Chrome DevTools Protocol (CDP) on an OS-assigned loopback port. `browser-auth.ts` launches Chrome with `--remote-debugging-port=0`, connects via WebSocket, and polls `Storage.getCookies`, keeping only cookies that apply to `BASE_URL` (`cookieAppliesToBase` — host-only cookies such as `OSID` exist once per Google host). It resolves once the required cookies (`SID`, `HSID`, `SSID`, `APISID`, `SAPISID`) are present and the tab is on NotebookLM (`isNotebookLmUrl`: `notebook.google.com`, or the legacy `notebooklm.google.com` which now 301s there).
 
 The `NotebookLMClient` auto-fetches CSRF token and session ID from the NotebookLM page HTML on first use, and can trigger headless browser refresh when session expires.
 

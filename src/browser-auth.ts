@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import type { Readable } from "node:stream";
 import WebSocket from "ws";
 import type { AuthTokens } from "./types.js";
-import { BASE_URL, REQUIRED_COOKIES } from "./constants.js";
+import { BASE_URL, REQUIRED_COOKIES, isNotebookLmUrl } from "./constants.js";
 import { validateCookies, saveTokens } from "./auth.js";
 
 // Bind exclusively to loopback. Without --remote-debugging-address Chrome
@@ -71,8 +71,7 @@ async function getDebuggerUrl(port: number): Promise<string> {
           const notebookTab = data.find(
             (target) =>
               target?.type === "page" &&
-              typeof target?.url === "string" &&
-              target.url.startsWith(BASE_URL) &&
+              isNotebookLmUrl(target?.url) &&
               typeof target?.webSocketDebuggerUrl === "string",
           );
           if (notebookTab) return notebookTab.webSocketDebuggerUrl;
@@ -179,6 +178,19 @@ export function releaseProfile(userDataDir: string): void {
       // ignore
     }
   }
+}
+
+// Storage.getCookies returns every cookie in the profile. Host-only cookies
+// such as OSID exist once per Google product host, so keying by name alone
+// lets another host's OSID overwrite ours and the server answers 302/401.
+// Keep only cookies the browser would actually send to BASE_URL.
+export function cookieAppliesToBase(domain: unknown): boolean {
+  if (typeof domain !== "string" || domain === "") return false;
+  const host = new URL(BASE_URL).hostname;
+  if (domain.startsWith(".")) {
+    return host === domain.slice(1) || host.endsWith(domain);
+  }
+  return host === domain;
 }
 
 export interface LaunchedChrome {
@@ -320,6 +332,7 @@ async function extractCookiesViaCDP(
         if (response.result && response.result.cookies) {
           const cookies: Record<string, string> = {};
           for (const c of response.result.cookies) {
+            if (!cookieAppliesToBase(c.domain)) continue;
             cookies[c.name] = c.value;
           }
 
@@ -357,7 +370,7 @@ async function extractCookiesViaCDP(
           try {
             const data = JSON.parse(response.result.result.value);
             // Only resolve if we're actually on NotebookLM — not the login page
-            if (!data.href || !data.href.startsWith("https://notebooklm.google.com")) {
+            if (!isNotebookLmUrl(data.href)) {
               // Still on Google login/chooser — reset and keep polling
               lastExtractedTokens = null;
               if (process.env.NOTEBOOKLM_DEBUG) {

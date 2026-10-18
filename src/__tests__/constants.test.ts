@@ -10,6 +10,8 @@ import {
   REPORT_FORMATS,
   RESEARCH_SOURCES,
   RESEARCH_MODES,
+  BASE_URL,
+  isNotebookLmUrl,
 } from "../constants.js";
 
 describe("CodeMapper", () => {
@@ -65,5 +67,23 @@ describe("REPORT_FORMATS", () => {
 
   it('has an empty prompt for "Create Your Own"', () => {
     expect(REPORT_FORMATS["Create Your Own"].prompt).toBe("");
+  });
+});
+
+describe("isNotebookLmUrl", () => {
+  it("targets the current host", () => {
+    expect(BASE_URL).toBe("https://notebook.google.com");
+  });
+
+  it("accepts the current and legacy hosts", () => {
+    expect(isNotebookLmUrl("https://notebook.google.com/?pli=1")).toBe(true);
+    expect(isNotebookLmUrl("https://notebooklm.google.com/notebook/n1")).toBe(true);
+  });
+
+  it("rejects login pages, lookalike hosts and non-strings", () => {
+    expect(isNotebookLmUrl("https://accounts.google.com/signin")).toBe(false);
+    expect(isNotebookLmUrl("https://notebook.google.com.evil.test/")).toBe(false);
+    expect(isNotebookLmUrl("not a url")).toBe(false);
+    expect(isNotebookLmUrl(undefined)).toBe(false);
   });
 });
