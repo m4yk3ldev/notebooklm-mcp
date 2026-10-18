@@ -52,6 +52,16 @@ export class AuthenticationError extends Error {
   }
 }
 
+export class RpcError extends Error {
+  constructor(
+    rpcId: string,
+    readonly codes: unknown[],
+  ) {
+    super(`NotebookLM RPC ${rpcId} failed with error code(s) ${JSON.stringify(codes)}`);
+    this.name = "RpcError";
+  }
+}
+
 export class NotebookLMClient {
   private auth: AuthState;
   private transport: RpcTransport;
@@ -89,9 +99,7 @@ export class NotebookLMClient {
                 "Authentication expired. Run `npx @m4ykeldev/notebooklm-mcp auth` to re-authenticate.",
               );
             }
-            throw new Error(
-              `NotebookLM RPC ${rpcId} failed with error code(s) ${JSON.stringify(errorCodes)}`,
-            );
+            throw new RpcError(rpcId, errorCodes);
           }
 
           const resultStr = item[2];
@@ -667,6 +675,8 @@ export class NotebookLMClient {
         1: "in_progress",
         2: "completed",
         6: "imported",
+        // Seen after an import that created no source; the task can be imported again.
+        7: "import_failed",
       };
 
       const sources: ResearchSource[] = [];
@@ -700,7 +710,7 @@ export class NotebookLMClient {
     notebookId: string,
     taskId: string,
     sourceIndices?: number[],
-  ): Promise<number> {
+  ): Promise<{ requested: number; imported: number }> {
     const task = (await this.pollResearch(notebookId, taskId))[0];
     if (!task) {
       throw new Error(`Research task ${taskId} not found in notebook ${notebookId}.`);
@@ -725,13 +735,26 @@ export class NotebookLMClient {
     }
     // Entry shape recorded from the web app (2026-10).
     const entries = picked.map((s) => [null, null, [s.url, s.title], null, null, null, null, null, null, null, 2]);
-    await this.execute(
-      RPC_IDS.IMPORT_RESEARCH,
-      [CLIENT_CONTEXT, [1], taskId, notebookId, entries],
-      `/notebook/${notebookId}`,
-      EXTENDED_TIMEOUT,
-    );
-    return entries.length;
+    // NotebookLM fetches each URL on import and drops the ones it can't reach;
+    // when none succeed the whole call fails with code 9.
+    let result: unknown;
+    try {
+      result = await this.execute(
+        RPC_IDS.IMPORT_RESEARCH,
+        [CLIENT_CONTEXT, [1], taskId, notebookId, entries],
+        `/notebook/${notebookId}`,
+        EXTENDED_TIMEOUT,
+      );
+    } catch (e) {
+      if (e instanceof RpcError && e.codes.includes(9)) {
+        throw new Error(
+          `NotebookLM could not fetch any of the ${entries.length} selected source(s). These failures are often transient: retry, or pick other results.`,
+        );
+      }
+      throw e;
+    }
+    const createdSources = (result as any[])?.[0];
+    return { requested: entries.length, imported: Array.isArray(createdSources) ? createdSources.length : 0 };
   }
 
   // ─── Studio Methods ──────────────────────────────────

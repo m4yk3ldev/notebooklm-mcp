@@ -619,6 +619,11 @@ describe("research RPCs", () => {
     expect(results[1].status).toBe("in_progress");
   });
 
+  it("pollResearch maps status 7 to import_failed", async () => {
+    mockBatchexecute({ [RPC_IDS.POLL_RESEARCH]: [[["t1", [null, ["q"], null, [[], null], 7]]]] });
+    expect((await new NotebookLMClient(tokens).pollResearch("n1"))[0].status).toBe("import_failed");
+  });
+
   it("pollResearch filters by task_id", async () => {
     mockBatchexecute({
       [RPC_IDS.POLL_RESEARCH]: [[
@@ -640,6 +645,8 @@ describe("research RPCs", () => {
     ["t1", ["n1", ["query", 1], 1, [sources, "summary"], status]],
   ]];
   const web = (u: string) => [u, `Title ${u}`, "desc", 1, null, null, null, true];
+  // Import answers with the sources it created (recorded 2026-10).
+  const created = (n: number) => [Array.from({ length: n }, (_, i) => [[`s${i}`], `Source ${i}`, [null, 1], [null, 2]])];
   const importParams = (captured: { rpcId: string; body: string }[]) => {
     const body = captured.find((c) => c.rpcId === RPC_IDS.IMPORT_RESEARCH)!.body;
     const fReq = decodeURIComponent(body.split("f.req=")[1].split("&")[0]);
@@ -649,10 +656,10 @@ describe("research RPCs", () => {
   it("importResearch sends the web app's payload for the chosen sources", async () => {
     const captured = mockBatchexecute({
       [RPC_IDS.POLL_RESEARCH]: pollWith(2, [web("https://a"), web("https://b"), web("https://c")]),
-      [RPC_IDS.IMPORT_RESEARCH]: [],
+      [RPC_IDS.IMPORT_RESEARCH]: created(2),
     });
     const n = await new NotebookLMClient(tokens).importResearch("n1", "t1", [0, 2]);
-    expect(n).toBe(2);
+    expect(n).toEqual({ requested: 2, imported: 2 });
     const p = importParams(captured);
     expect(p[0]).toEqual(CLIENT_CONTEXT);
     expect(p.slice(1, 4)).toEqual([[1], "t1", "n1"]);
@@ -665,10 +672,35 @@ describe("research RPCs", () => {
   it("importResearch imports every source when indices are omitted", async () => {
     const captured = mockBatchexecute({
       [RPC_IDS.POLL_RESEARCH]: pollWith(2, [web("https://a"), web("https://b")]),
-      [RPC_IDS.IMPORT_RESEARCH]: [],
+      [RPC_IDS.IMPORT_RESEARCH]: created(2),
     });
-    expect(await new NotebookLMClient(tokens).importResearch("n1", "t1")).toBe(2);
+    expect(await new NotebookLMClient(tokens).importResearch("n1", "t1")).toEqual({ requested: 2, imported: 2 });
     expect(importParams(captured)[4]).toHaveLength(2);
+  });
+
+  it("importResearch counts only the sources NotebookLM created", async () => {
+    // The server fetches each URL on import and silently drops the ones it can't fetch.
+    mockBatchexecute({
+      [RPC_IDS.POLL_RESEARCH]: pollWith(2, [web("https://a"), web("https://b"), web("https://c")]),
+      [RPC_IDS.IMPORT_RESEARCH]: created(1),
+    });
+    expect(await new NotebookLMClient(tokens).importResearch("n1", "t1")).toEqual({ requested: 3, imported: 1 });
+  });
+
+  it("importResearch retries a task whose last import failed", async () => {
+    mockBatchexecute({
+      [RPC_IDS.POLL_RESEARCH]: pollWith(7, [web("https://a")]),
+      [RPC_IDS.IMPORT_RESEARCH]: created(1),
+    });
+    expect(await new NotebookLMClient(tokens).importResearch("n1", "t1")).toEqual({ requested: 1, imported: 1 });
+  });
+
+  it("importResearch explains error 9: none of the sources could be fetched", async () => {
+    mockBatchexecute(
+      { [RPC_IDS.POLL_RESEARCH]: pollWith(2, [web("https://a")]) },
+      { errors: { [RPC_IDS.IMPORT_RESEARCH]: [9] } },
+    );
+    await expect(new NotebookLMClient(tokens).importResearch("n1", "t1")).rejects.toThrow(/could not fetch any/);
   });
 
   it("importResearch rejects unknown tasks, running tasks, bad indices and url-less sources", async () => {
