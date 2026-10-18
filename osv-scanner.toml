@@ -1,0 +1,7 @@
+# osv-scanner config (read automatically next to pnpm-lock.yaml).
+# Every ignore needs a reason and an expiry so it gets re-checked.
+
+[[IgnoredVulns]]
+id = "GHSA-g7r4-m6w7-qqqr"
+ignoreUntil = 2027-01-18
+reason = "Low: esbuild dev server file read on Windows. Dev-only, via tsup 8 (esbuild ^0.27); the fix needs tsup 9. We never run esbuild's dev server."
