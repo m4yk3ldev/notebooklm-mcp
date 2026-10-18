@@ -662,6 +662,12 @@ If the model invokes `notebook_list` and returns a table of titles, you're conne
 
 ---
 
+## 🧩 Agent Skill
+
+[`skills/notebooklm/SKILL.md`](skills/notebooklm/SKILL.md) teaches an agent when and how to use these tools (setup, query → studio → research workflows, confirmation rules, failure handling). Copy the `skills/notebooklm/` folder into your agent's skills directory (for Claude Code: `~/.claude/skills/`).
+
+---
+
 ## 💬 Example Prompts
 
 Once wired up, your AI can drive NotebookLM end-to-end with natural language. The model picks the right tool from the 32 below.
