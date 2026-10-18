@@ -425,6 +425,16 @@ describe("query RPC", () => {
     expect(r.conversation_id).toBe("conv-1");
   });
 
+  it("ignores a non-array inner[2] instead of taking its first character", async () => {
+    const row = JSON.stringify([
+      ["wrb.fr", null, JSON.stringify([["The answer", null, "conv-1", null, null]]), null, null, null, "generic"],
+    ]);
+    mockBatchexecute({}, { queryBody: `)]}'\n\n${row.length}\n${row}` });
+    const r = await new NotebookLMClient(tokens).query("n1", "ask");
+    expect(r.answer).toBe("The answer");
+    expect(r.conversation_id).toBeNull();
+  });
+
   it("sends each source as [[id]] and the conversation id at params[4]", async () => {
     mockBatchexecute();
     const bodies: string[] = [];
@@ -715,7 +725,35 @@ describe("research RPCs", () => {
     await expect(c().importResearch("n1", "t1", [5])).rejects.toThrow(/out of range/);
     server.resetHandlers();
     mockBatchexecute({ [RPC_IDS.POLL_RESEARCH]: pollWith(2, [[null, "Drive doc", null, 2]]) });
-    await expect(c().importResearch("n1", "t1")).rejects.toThrow(/no URL/);
+    await expect(c().importResearch("n1", "t1", [0])).rejects.toThrow(/no URL/);
+    await expect(c().importResearch("n1", "t1")).rejects.toThrow(/no web results/);
+    await expect(c().importResearch("n1", "t1", [])).rejects.toThrow(/at least one/);
+  });
+
+  it("importResearch without indices imports the web results and skips Drive ones", async () => {
+    const captured = mockBatchexecute({
+      [RPC_IDS.POLL_RESEARCH]: pollWith(2, [web("https://a"), [null, "Drive doc", null, 2], web("https://b")]),
+      [RPC_IDS.IMPORT_RESEARCH]: created(2),
+    });
+    expect(await new NotebookLMClient(tokens).importResearch("n1", "t1")).toEqual({ requested: 2, imported: 2 });
+    expect(importParams(captured)[4].map((e: any[]) => e[2][0])).toEqual(["https://a", "https://b"]);
+  });
+
+  it("importResearch sends each index once", async () => {
+    const captured = mockBatchexecute({
+      [RPC_IDS.POLL_RESEARCH]: pollWith(2, [web("https://a"), web("https://b")]),
+      [RPC_IDS.IMPORT_RESEARCH]: created(1),
+    });
+    expect(await new NotebookLMClient(tokens).importResearch("n1", "t1", [1, 1])).toEqual({ requested: 1, imported: 1 });
+    expect(importParams(captured)[4]).toHaveLength(1);
+  });
+
+  it("importResearch fails on an unexpected response instead of reporting 0 imported", async () => {
+    mockBatchexecute({
+      [RPC_IDS.POLL_RESEARCH]: pollWith(2, [web("https://a")]),
+      [RPC_IDS.IMPORT_RESEARCH]: null,
+    });
+    await expect(new NotebookLMClient(tokens).importResearch("n1", "t1")).rejects.toThrow(/unexpected response/);
   });
 
   it("startResearch fast mode defaults taskId to empty when API returns []", async () => {
@@ -808,17 +846,15 @@ describe("studio create RPCs", () => {
     "createSlideDeck",
     "createFlashcards",
     "createReport",
-  ] as const)("%s defaults to empty string when RPC returns []", async (method) => {
+  ] as const)("%s fails when NotebookLM returns no artifact id", async (method) => {
     mockBatchexecute({ [RPC_IDS.CREATE_STUDIO]: [] });
     const c = new NotebookLMClient(tokens);
-    const id = await (c as any)[method]("n1", ["s1"]);
-    expect(id).toBe("");
+    await expect((c as any)[method]("n1", ["s1"])).rejects.toThrow(/no artifact id/);
   });
 
-  it("createQuiz defaults to empty string when RPC returns []", async () => {
+  it("createQuiz fails when NotebookLM returns no artifact id", async () => {
     mockBatchexecute({ [RPC_IDS.CREATE_STUDIO]: [] });
-    const id = await new NotebookLMClient(tokens).createQuiz("n1", ["s1"]);
-    expect(id).toBe("");
+    await expect(new NotebookLMClient(tokens).createQuiz("n1", ["s1"])).rejects.toThrow(/no artifact id/);
   });
 
   it("createQuiz passes question_count", async () => {
@@ -830,7 +866,7 @@ describe("studio create RPCs", () => {
   it("pollStudio parses artifacts and status codes", async () => {
     mockBatchexecute({
       [RPC_IDS.POLL_STUDIO]: [[
-        ["a1", "T", 1, null, 3, null, [null, null, null, null, null, [["http://dl/a1", 1, "audio/mp4"]]]],
+        ["a1", "T", 1, null, 3, null, [null, null, null, null, null, [["https://dl/a1", 1, "audio/mp4"]]]],
         ["a2", "T", 3, null, 2, null],
         ["a3", "T", 9, null, 99, null],
         "not-array",
@@ -839,7 +875,7 @@ describe("studio create RPCs", () => {
     const arts = await new NotebookLMClient(tokens).pollStudio("n1");
     expect(arts).toHaveLength(3);
     expect(arts[0].status).toBe("completed");
-    expect(arts[0].download_url).toBe("http://dl/a1");
+    expect(arts[0].download_url).toBe("https://dl/a1");
     expect(arts[1].status).toBe("generating");
     expect(arts[2].status).toBe("pending");
   });

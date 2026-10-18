@@ -108,8 +108,8 @@ describe("studio parsers", () => {
 
   it("studioArtifactId unwraps the created row", () => {
     expect(studioArtifactId([["8647c586", "T", 2]])).toBe("8647c586");
-    expect(studioArtifactId([])).toBe("");
-    expect(studioArtifactId(null)).toBe("");
+    expect(() => studioArtifactId([])).toThrow(/no artifact id/);
+    expect(() => studioArtifactId(null)).toThrow(/no artifact id/);
   });
 
   it("studioTypeName splits quiz from flashcards by row[9][1][0]", () => {
@@ -119,13 +119,19 @@ describe("studio parsers", () => {
   });
 
   it("studioDownloadUrl picks the per-type file (recorded shapes)", () => {
-    expect(studioDownloadUrl(row(1, { 6: [null, null, "u-direct", "u-dv", false,
-      [["u-dv", 4, "audio/mp4"], ["u-audio", 1, "audio/mp4"], ["u-hls", 2], ["u-dash", 3]]] }))).toBe("u-audio");
-    expect(studioDownloadUrl(row(3, { 8: [null, "u", null, "u-dv",
-      [["u-video", 1, "video/mp4"], ["u-hls", 2], ["u-dash", 3], ["u-dv", 4, "video/mp4"]]] }))).toBe("u-video");
-    expect(studioDownloadUrl(row(7, { 14: [null, "T", [["T", ["u-image", 2048, 2048], "desc"]]] }))).toBe("u-image");
-    expect(studioDownloadUrl(row(8, { 16: [null, "T", [], "u-pdf", "u-pptx"] }))).toBe("u-pdf");
+    expect(studioDownloadUrl(row(1, { 6: [null, null, "https://direct", "https://dv", false,
+      [["https://dv", 4, "audio/mp4"], ["https://audio", 1, "audio/mp4"], ["https://hls", 2], ["https://dash", 3]]] }))).toBe("https://audio");
+    expect(studioDownloadUrl(row(3, { 8: [null, "https://u", null, "https://dv",
+      [["https://video", 1, "video/mp4"], ["https://hls", 2], ["https://dash", 3], ["https://dv", 4, "video/mp4"]]] }))).toBe("https://video");
+    expect(studioDownloadUrl(row(7, { 14: [null, "T", [["T", ["https://image", 2048, 2048], "desc"]]] }))).toBe("https://image");
+    expect(studioDownloadUrl(row(8, { 16: [null, "T", [], "https://pdf", "https://pptx"] }))).toBe("https://pdf");
     expect(studioDownloadUrl(row(2, { 7: ["# Report"] }))).toBeNull();
     expect(studioDownloadUrl(row(1))).toBeNull();
+  });
+
+  it("studioDownloadUrl returns only https urls", () => {
+    // A string where a list is expected must not leak its first character.
+    expect(studioDownloadUrl(row(7, { 14: [null, "T", [["T", "https://image", "desc"]]] }))).toBeNull();
+    expect(studioDownloadUrl(row(8, { 16: [null, "T", [], "u-pdf"] }))).toBeNull();
   });
 });

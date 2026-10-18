@@ -79,6 +79,7 @@ vi.mock("../auth.js", () => ({
 
 import {
   cookieAppliesToBase,
+  cookiesForBase,
   findChrome,
   launchChrome,
   refreshCookiesHeadless,
@@ -884,5 +885,28 @@ describe("cookieAppliesToBase", () => {
     expect(cookieAppliesToBase("accounts.google.com")).toBe(false);
     expect(cookieAppliesToBase(".youtube.com")).toBe(false);
     expect(cookieAppliesToBase(undefined)).toBe(false);
+  });
+
+  it("rejects look-alike hosts and non-dot parents", () => {
+    expect(cookieAppliesToBase("google.com")).toBe(false);
+    expect(cookieAppliesToBase("evilnotebook.google.com")).toBe(false);
+    expect(cookieAppliesToBase(".evil-notebook.google.com")).toBe(false);
+    expect(cookieAppliesToBase("")).toBe(false);
+  });
+});
+
+describe("cookiesForBase", () => {
+  it("keeps only cookies for the base host", () => {
+    expect(cookiesForBase([
+      { name: "SID", value: "a", domain: ".google.com" },
+      { name: "OSID", value: "other", domain: "notebooklm.google.com" },
+    ])).toEqual({ SID: "a" });
+  });
+
+  it("prefers the exact-host cookie over a domain-wide one with the same name, in any order", () => {
+    const exact = { name: "OSID", value: "exact", domain: "notebook.google.com" };
+    const wide = { name: "OSID", value: "wide", domain: ".google.com" };
+    expect(cookiesForBase([exact, wide])).toEqual({ OSID: "exact" });
+    expect(cookiesForBase([wide, exact])).toEqual({ OSID: "exact" });
   });
 });

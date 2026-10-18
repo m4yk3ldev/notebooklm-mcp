@@ -556,7 +556,7 @@ export class NotebookLMClient {
                   if (typeof answer === "string" && answer.length > bestAnswer.length) {
                     bestAnswer = answer;
                   }
-                  if (typeof inner[2]?.[0] === "string") convId = inner[2][0];
+                  if (Array.isArray(inner[2]) && typeof inner[2][0] === "string") convId = inner[2][0];
                 }
               } catch {
                 // skip
@@ -718,20 +718,30 @@ export class NotebookLMClient {
     if (task.status === "in_progress") {
       throw new Error(`Research task ${taskId} is still running; wait until research_status reports "completed".`);
     }
-    const picked = sourceIndices
-      ? sourceIndices.map((i) => {
-          const s = task.sources[i];
-          if (!s) {
-            throw new Error(`Source index ${i} out of range (task has ${task.sources.length} sources).`);
-          }
-          return s;
-        })
-      : task.sources;
     // Only web results have been observed on the wire; Drive results carry no
-    // URL and their import shape is unknown.
-    const withoutUrl = picked.filter((s) => !s.url).length;
-    if (withoutUrl > 0) {
-      throw new Error(`Only web results can be imported; ${withoutUrl} selected source(s) have no URL.`);
+    // URL and their import shape is unknown. Without indices, import the web
+    // results; with indices, refuse a Drive result rather than skip it.
+    let picked: ResearchSource[];
+    if (sourceIndices) {
+      if (sourceIndices.length === 0) {
+        throw new Error("source_indices must list at least one index; omit it to import every web result.");
+      }
+      picked = [...new Set(sourceIndices)].map((i) => {
+        const s = task.sources[i];
+        if (!s) {
+          throw new Error(`Source index ${i} out of range (task has ${task.sources.length} sources).`);
+        }
+        return s;
+      });
+      const withoutUrl = picked.filter((s) => !s.url).length;
+      if (withoutUrl > 0) {
+        throw new Error(`Only web results can be imported; ${withoutUrl} selected source(s) have no URL.`);
+      }
+    } else {
+      picked = task.sources.filter((s) => s.url);
+      if (picked.length === 0) {
+        throw new Error(`Research task ${taskId} has no web results to import.`);
+      }
     }
     // Entry shape recorded from the web app (2026-10).
     const entries = picked.map((s) => [null, null, [s.url, s.title], null, null, null, null, null, null, null, 2]);
@@ -753,8 +763,11 @@ export class NotebookLMClient {
       }
       throw e;
     }
-    const createdSources = (result as any[])?.[0];
-    return { requested: entries.length, imported: Array.isArray(createdSources) ? createdSources.length : 0 };
+    const createdSources = Array.isArray(result) ? result[0] : null;
+    if (!Array.isArray(createdSources)) {
+      throw new Error("NotebookLM returned an unexpected response to the import; check the notebook before retrying.");
+    }
+    return { requested: entries.length, imported: createdSources.length };
   }
 
   // ─── Studio Methods ──────────────────────────────────

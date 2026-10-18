@@ -63,7 +63,7 @@ Use when the user wants NotebookLM to find sources for them.
 
 1. `research_start` with `query`, `source` (`web` default, or `drive`) and `mode` (`fast` default, or `deep` for a longer, more thorough pass). Returns a `task_id`.
 2. Poll `research_status` until the status leaves `in_progress`. Deep research can take minutes; poll at a relaxed pace and tell the user it is still running.
-3. Show the user what was found, then `research_import` with `source_indices` for the ones they want (omit to import all). Indices are positions in the `sources` list returned by `research_status`. Only web results (those with a URL) can be imported.
+3. Show the user what was found, then `research_import` with `source_indices` for the ones they want. Indices are positions in the `sources` list returned by `research_status`. Only web results (those with a URL) can be imported: omitting `source_indices` imports every web result and skips Drive ones, while an index pointing at a Drive result is an error.
 4. Read the result: "Imported X of Y research sources". NotebookLM fetches each URL and silently skips the ones it can't reach, so X can be lower than Y. If none could be fetched the tool returns an error and the task shows `import_failed`; retrying usually works, or pick other results.
 
 ## Studio content

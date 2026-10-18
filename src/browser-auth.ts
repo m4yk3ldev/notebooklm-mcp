@@ -193,6 +193,25 @@ export function cookieAppliesToBase(domain: unknown): boolean {
   return host === domain;
 }
 
+/**
+ * Name → value for the cookies the browser would send to `BASE_URL`. When a
+ * name exists both host-only and domain-wide, the host-only copy wins, as it
+ * would in the browser's own Cookie header ordering.
+ */
+export function cookiesForBase(list: { name: string; value: string; domain?: string }[]): Record<string, string> {
+  const host = new URL(BASE_URL).hostname;
+  const cookies: Record<string, string> = {};
+  const exact = new Set<string>();
+  for (const c of list) {
+    if (!cookieAppliesToBase(c.domain)) continue;
+    const isExact = c.domain === host;
+    if (exact.has(c.name) && !isExact) continue;
+    cookies[c.name] = c.value;
+    if (isExact) exact.add(c.name);
+  }
+  return cookies;
+}
+
 export interface LaunchedChrome {
   proc: ChildProcess;
   port: number;
@@ -330,11 +349,7 @@ async function extractCookiesViaCDP(
           return;
         }
         if (response.result && response.result.cookies) {
-          const cookies: Record<string, string> = {};
-          for (const c of response.result.cookies) {
-            if (!cookieAppliesToBase(c.domain)) continue;
-            cookies[c.name] = c.value;
-          }
+          const cookies = cookiesForBase(response.result.cookies);
 
           if (validateCookies(cookies)) {
             // Cookies look complete — but verify we're actually ON NotebookLM

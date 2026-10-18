@@ -670,7 +670,7 @@ If the model invokes `notebook_list` and returns a table of titles, you're conne
 
 ## 💬 Example Prompts
 
-Once wired up, your AI can drive NotebookLM end-to-end with natural language. The model picks the right tool from the 32 below.
+Once wired up, your AI can drive NotebookLM end-to-end with natural language. The model picks the right tool from the 27 below.
 
 | Goal | Sample prompt | Tools the model will call |
 |---|---|---|

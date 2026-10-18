@@ -101,7 +101,8 @@ export function sourceTypeCode(row: unknown): number | null {
 // CREATE_STUDIO answers [[id, title, type, ...]] — the new artifact's row.
 export function studioArtifactId(data: unknown): string {
   const row = Array.isArray(data) ? data[0] : null;
-  return Array.isArray(row) && typeof row[0] === "string" ? row[0] : "";
+  if (Array.isArray(row) && typeof row[0] === "string" && row[0]) return row[0];
+  throw new Error("NotebookLM returned no artifact id; the generation may not have started.");
 }
 
 // Quiz and flashcards share type code 4; row[9][1][0] is the variant sent on
@@ -138,5 +139,7 @@ export function studioDownloadUrl(row: any[]): string | null {
       url = row[16]?.[3];
       break;
   }
-  return typeof url === "string" ? url : null;
+  // Every level above can be a string on an unexpected shape, and indexing a
+  // string yields a single character, so only accept a real https url.
+  return typeof url === "string" && url.startsWith("https://") ? url : null;
 }
