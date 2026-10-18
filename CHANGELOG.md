@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-10-18
+
+Google moved NotebookLM to `notebook.google.com` and changed several internal
+RPC shapes. Every tool was re-verified live against the current service (#8).
+
+### Changed (BREAKING)
+- Requires **Node.js ≥ 20** (`engines.node`). The MCP SDK 1.32 dependency tree
+  needs it; Node 18 is end-of-life.
+
+### Fixed
+- Auth: target `notebook.google.com`. The old host 301s there and the redirect
+  dropped the Cookie header, so every call failed with "Authentication expired"
+  or HTTP 401 even with valid cookies (#6).
+- Auth: keep only the cookies that apply to NotebookLM's host (`OSID` is
+  host-only and exists once per Google host).
+- Auth: a signed-out session now fails with a clear error asking to run `auth`,
+  instead of `refresh_auth` reporting success. It does not open a browser on
+  its own.
+- `notebook_query` uses all sources by default (it used whatever was ticked in
+  the web UI), `source_ids` works again, and `conversation_id` is returned so
+  follow-ups keep context.
+- `source_get_content` reads the current content format, including tables.
+- Source types are reported correctly instead of `unknown`.
+- Studio tools return the artifact id instead of the raw response, and fail
+  clearly when none comes back.
+- `studio_status` gives a `download_url` for audio, video, infographics and
+  slide decks (PDF), and reports quizzes as `quiz` rather than `flashcards`.
+- `research_import` works again (was rejected with INVALID_ARGUMENT). It reports
+  "Imported X of Y", since NotebookLM skips URLs it cannot fetch. Without
+  `source_indices` it imports every web result and skips Drive ones. A task
+  whose import failed (`import_failed`) can be imported again.
+
+### Added
+- Agent skill at `skills/notebooklm/SKILL.md`, which teaches an agent when and
+  how to use these tools.
+
+### Security
+- `@modelcontextprotocol/sdk` 1.29.0 → 1.32.1, vitest 4.1.11, and refreshed
+  transitive dependencies. This clears 1 critical and 13 high advisories. esbuild
+  is pinned to 0.28.2 through `pnpm-workspace.yaml` overrides. `pnpm audit` and
+  osv-scanner report nothing.
+- CI adds an osv-scanner job and runs the tests on Node 20, 22 and 24.
+
 ## [0.3.1] - 2026-07-11
 
 ### Fixed
