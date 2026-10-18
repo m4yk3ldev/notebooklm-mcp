@@ -395,28 +395,56 @@ describe("source RPCs", () => {
   });
 });
 
+// Recorded 2026-10: answer at inner[0], [convId, messageId, n] at inner[2].
+function queryResponse(answer: string, convId: string) {
+  const row = JSON.stringify([
+    ["wrb.fr", null, JSON.stringify([[answer, null, [convId, "msg-1", 255349873], null, null]]), null, null, null, "generic"],
+  ]);
+  return `)]}'\n\n${row.length}\n${row}`;
+}
+
+function captureQueries(bodies: string[], replies: string[]) {
+  server.use(
+    http.post(`${BASE_URL}${QUERY_PATH}`, async ({ request }) => {
+      bodies.push(await request.text());
+      return HttpResponse.text(replies[Math.min(bodies.length - 1, replies.length - 1)]);
+    }),
+  );
+}
+
+function queryParams(body: string): any[] {
+  const fReq = decodeURIComponent(body.split("f.req=")[1].split("&")[0]);
+  return JSON.parse(JSON.parse(fReq)[1]);
+}
+
 describe("query RPC", () => {
-  it("returns answer and conversation_id on happy path", async () => {
-    const queryBody = `)]}'\n\n${JSON.stringify([
-      ["wrb.fr", "q", JSON.stringify([["The answer", null, 1, null, null, null, null, null, null, null, "conv-1"]]), null, null, null, "generic"],
-    ]).length}\n${JSON.stringify([
-      ["wrb.fr", "q", JSON.stringify([["The answer", null, 1, null, null, null, null, null, null, null, "conv-1"]]), null, null, null, "generic"],
-    ])}`;
-    mockBatchexecute({}, { queryBody });
+  it("returns answer and conversation_id from inner[2][0]", async () => {
+    mockBatchexecute({}, { queryBody: queryResponse("The answer", "conv-1") });
     const r = await new NotebookLMClient(tokens).query("n1", "ask");
     expect(r.answer).toBe("The answer");
     expect(r.conversation_id).toBe("conv-1");
   });
 
-  it("forwards source_ids and conversation_id", async () => {
-    const queryBody = `)]}'\n\n${JSON.stringify([
-      ["wrb.fr", "q", JSON.stringify([["ok", null, 1, null, null, null, null, null, null, null, "c2"]]), null, null, null, "generic"],
-    ]).length}\n${JSON.stringify([
-      ["wrb.fr", "q", JSON.stringify([["ok", null, 1, null, null, null, null, null, null, null, "c2"]]), null, null, null, "generic"],
-    ])}`;
-    mockBatchexecute({}, { queryBody });
-    const r = await new NotebookLMClient(tokens).query("n1", "q", ["s1"], "c2");
-    expect(r.conversation_id).toBe("c2");
+  it("sends each source as [[id]] and the conversation id at params[4]", async () => {
+    mockBatchexecute();
+    const bodies: string[] = [];
+    captureQueries(bodies, [queryResponse("ok", "c2")]);
+    await new NotebookLMClient(tokens).query("n1", "q", ["s1", "s2"], "c2");
+    const p = queryParams(bodies[0]);
+    expect(p[0]).toEqual([[["s1"]], [["s2"]]]);
+    expect(p[4]).toBe("c2");
+    expect(p[7]).toBe("n1");
+  });
+
+  it("sends history newest first, answer before question", async () => {
+    mockBatchexecute();
+    const bodies: string[] = [];
+    captureQueries(bodies, [queryResponse("A1", "conv"), queryResponse("A2", "conv")]);
+    const c = new NotebookLMClient(tokens);
+    const first = await c.query("n1", "Q1", ["s1"]);
+    await c.query("n1", "Q2", ["s1"], first.conversation_id!);
+    expect(queryParams(bodies[0])[2]).toEqual([]);
+    expect(queryParams(bodies[1])[2]).toEqual([["A1", null, 2], ["Q1", null, 1]]);
   });
 
   it("query retries after code 16 by falling back to manual auth flow", async () => {
@@ -1007,7 +1035,7 @@ describe("refresh", () => {
     // Answer="" means bestAnswer never updates → `if (convId && bestAnswer)` is false.
     const body = `)]}'\n\n${(() => {
       const bundle = JSON.stringify([
-        ["wrb.fr", "q", JSON.stringify([["", null, 1, null, null, null, null, null, null, null, "conv-zero"]]), null, null, null, "generic"],
+        ["wrb.fr", "q", JSON.stringify([["", null, ["conv-zero", "msg-1", 1], null, null]]), null, null, null, "generic"],
       ]);
       return `${bundle.length}\n${bundle}`;
     })()}`;
@@ -1018,7 +1046,7 @@ describe("refresh", () => {
     const c = new NotebookLMClient(tokens);
     const r = await c.query("nb-1", "ask");
     expect(r.answer).toBe("");
-    // conversation_id is still surfaced from inner[10].
+    // conversation_id is still surfaced from inner[2][0].
     expect(r.conversation_id).toBe("conv-zero");
   });
 
@@ -1026,7 +1054,7 @@ describe("refresh", () => {
     // First turn populates the history map; the second turn re-uses it.
     const buildBody = (answer: string, conv: string) => {
       const bundle = JSON.stringify([
-        ["wrb.fr", "q", JSON.stringify([[answer, null, 1, null, null, null, null, null, null, null, conv]]), null, null, null, "generic"],
+        ["wrb.fr", "q", JSON.stringify([[answer, null, [conv, "msg-1", 1], null, null]]), null, null, null, "generic"],
       ]);
       return `)]}'\n\n${bundle.length}\n${bundle}`;
     };

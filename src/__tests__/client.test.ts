@@ -131,7 +131,7 @@ describe("NotebookLMClient", () => {
         const successBundle = [
           "wrb.fr",
           "rpc-query",
-          JSON.stringify([["This is the answer", null, 1, null, null, null, null, null, null, null, "conv-123"]]),
+          JSON.stringify([["This is the answer", null, ["conv-123", "msg-1", 1], null, null]]),
           null, null, null, "generic"
         ];
         const json = JSON.stringify([successBundle]);

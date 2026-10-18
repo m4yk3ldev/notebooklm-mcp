@@ -215,6 +215,9 @@ export const BATCHEXECUTE_PATH = "/_/LabsTailwindUi/data/batchexecute";
 export const QUERY_PATH =
   "/_/LabsTailwindUi/data/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateFreeFormStreamed";
 
+// Request context the web app sends with queries and research import (2026-10).
+export const CLIENT_CONTEXT = [2, null, [1], [1, null, null, null, null, null, null, null, null, null, [1, 3]]];
+
 export const DEFAULT_BL = "boq_labs-tailwind-frontend_20260419.02_p0";
 
 export const REQUIRED_COOKIES = [

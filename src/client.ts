@@ -29,6 +29,7 @@ import {
   FLASHCARD_DIFFICULTIES,
   FLASHCARD_COUNT_DEFAULT,
   REPORT_FORMATS,
+  CLIENT_CONTEXT,
 } from "./constants.js";
 import {
   extractCsrfFromPage,
@@ -484,16 +485,14 @@ export class NotebookLMClient {
       ? this.conversationHistory.get(conversationId) || []
       : [];
 
-    const sourcesNested = sourceIds
-      ? sourceIds.map((sid) => [[[sid]]])
-      : [];
+    const sourcesNested = sourceIds ? sourceIds.map((sid) => [[sid]]) : [];
 
     // Discovered format: [sources, query, history, config, convId, null, null, notebookId, 1]
     const params = [
       sourcesNested,
       queryText,
       history,
-      [2, null, [1], [1]],
+      CLIENT_CONTEXT,
       conversationId || null,
       null,
       null,
@@ -543,14 +542,13 @@ export class NotebookLMClient {
               try {
                 const data = JSON.parse(resultStr);
                 if (Array.isArray(data) && Array.isArray(data[0])) {
-                  // Format: [[answer, null, [sources], null, [formatting]], ...]
+                  // Format: [[answer, null, [convId, messageId, n], null, [formatting]], ...]
                   const inner = data[0];
                   const answer = inner[0];
                   if (typeof answer === "string" && answer.length > bestAnswer.length) {
                     bestAnswer = answer;
                   }
-                  // Conversation ID is usually in the meta block of the first element
-                  if (inner[10]) convId = String(inner[10]);
+                  if (typeof inner[2]?.[0] === "string") convId = inner[2][0];
                 }
               } catch {
                 // skip
@@ -562,10 +560,12 @@ export class NotebookLMClient {
 
       // Store history for next turn
       if (convId && bestAnswer) {
-        const turnHistory = this.conversationHistory.get(convId) || [];
-        turnHistory.push([queryText, null, 1]);
-        turnHistory.push([bestAnswer, null, 2]);
-        this.conversationHistory.set(convId, turnHistory.slice(-10)); // Keep last 10 turns
+        const previous = this.conversationHistory.get(convId) || [];
+        // Newest turn first, answer before question — the order the web app sends.
+        this.conversationHistory.set(
+          convId,
+          [[bestAnswer, null, 2], [queryText, null, 1], ...previous].slice(0, 10),
+        );
       }
 
       return {

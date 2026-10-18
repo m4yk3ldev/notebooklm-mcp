@@ -410,19 +410,32 @@ describe("studioTools", () => {
 });
 
 describe("queryTools", () => {
-  it("notebook_query returns answer and conversation_id", async () => {
+  it("notebook_query sends every source when source_ids is omitted", async () => {
     const client = {
-      query: vi
-        .fn()
-        .mockResolvedValue({ answer: "hi", conversation_id: "c1" }),
+      getNotebook: vi.fn().mockResolvedValue({ sources: [{ id: "s1" }, { id: "s2" }] }),
+      query: vi.fn().mockResolvedValue({ answer: "hi", conversation_id: "c1" }),
     };
     const result = await findTool(queryTools, "notebook_query").execute(
       client,
       { notebook_id: "n1", query: "?" },
       noopOpts(),
     );
-    expect(client.query).toHaveBeenCalledWith("n1", "?", undefined, undefined);
+    expect(client.query).toHaveBeenCalledWith("n1", "?", ["s1", "s2"], undefined);
     expect(result).toEqual({ answer: "hi", conversation_id: "c1" });
+  });
+
+  it("notebook_query keeps explicit source_ids", async () => {
+    const client = {
+      getNotebook: vi.fn(),
+      query: vi.fn().mockResolvedValue({ answer: "hi", conversation_id: "c1" }),
+    };
+    await findTool(queryTools, "notebook_query").execute(
+      client,
+      { notebook_id: "n1", query: "?", source_ids: ["s9"], conversation_id: "c1" },
+      noopOpts(),
+    );
+    expect(client.getNotebook).not.toHaveBeenCalled();
+    expect(client.query).toHaveBeenCalledWith("n1", "?", ["s9"], "c1");
   });
 });
 
