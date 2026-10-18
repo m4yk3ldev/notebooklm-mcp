@@ -30,6 +30,7 @@ import {
   FLASHCARD_COUNT_DEFAULT,
   REPORT_FORMATS,
   CLIENT_CONTEXT,
+  isNotebookLmUrl,
 } from "./constants.js";
 import {
   extractCsrfFromPage,
@@ -124,12 +125,13 @@ export class NotebookLMClient {
     timeout: number = DEFAULT_TIMEOUT,
     isRetry = false,
   ): Promise<unknown> {
-    // If CSRF or SID are missing, try to extract them first
-    if (!this.auth.csrfToken || !this.auth.sessionId) {
-      await this.refreshAuthTokens();
-    }
-
     try {
+      // If CSRF or SID are missing, try to extract them first. Inside the try
+      // so a signed-out landing page goes through the recovery below.
+      if (!this.auth.csrfToken || !this.auth.sessionId) {
+        await this.refreshAuthTokens();
+      }
+
       const envelopes = await this.transport.callBatchexecute(
         rpcId,
         params,
@@ -172,16 +174,22 @@ export class NotebookLMClient {
   }
 
   private async refreshAuthTokens(): Promise<void> {
-    const html = await this.transport.fetchLandingHtml(DEFAULT_TIMEOUT);
+    const { html, url } = await this.transport.fetchLandingHtml(DEFAULT_TIMEOUT);
+    if (url && !isNotebookLmUrl(url)) {
+      throw new AuthenticationError(
+        `NotebookLM redirected to ${new URL(url).hostname} (Google sign-in): the session is signed out. Run \`npx @m4ykeldev/notebooklm-mcp auth\` to re-authenticate.`,
+      );
+    }
     const csrf = extractCsrfFromPage(html);
     const sid = extractSessionIdFromPage(html);
 
-    if (csrf) {
-      this.auth.recordCsrfToken(csrf);
-      console.error("✅ New CSRF token extracted.");
-    } else {
-      console.error("⚠️ Failed to extract CSRF token from page.");
+    if (!csrf) {
+      throw new AuthenticationError(
+        "NotebookLM page has no CSRF token: the session is likely signed out. Run `npx @m4ykeldev/notebooklm-mcp auth` to re-authenticate.",
+      );
     }
+    this.auth.recordCsrfToken(csrf);
+    console.error("✅ New CSRF token extracted.");
 
     if (sid) {
       this.auth.recordSessionId(sid);
@@ -484,11 +492,6 @@ export class NotebookLMClient {
     conversationId?: string,
     isRetry = false,
   ): Promise<QueryResponse> {
-    // If CSRF or SID are missing, try to extract them first
-    if (!this.auth.csrfToken || !this.auth.sessionId) {
-      await this.refreshAuthTokens();
-    }
-
     const history = conversationId
       ? this.conversationHistory.get(conversationId) || []
       : [];
@@ -509,6 +512,11 @@ export class NotebookLMClient {
     ];
 
     try {
+      // Inside the try so a signed-out landing page goes through the recovery below.
+      if (!this.auth.csrfToken || !this.auth.sessionId) {
+        await this.refreshAuthTokens();
+      }
+
       const fReq = JSON.stringify([null, JSON.stringify(params)]);
       const bodyParts = [`f.req=${encodeURIComponent(fReq)}`];
       if (this.auth.csrfToken) {

@@ -918,17 +918,48 @@ describe("refresh", () => {
     await expect(c.refreshAuth()).resolves.toBeUndefined();
   });
 
-  it("refreshAuth logs warnings when CSRF/SID extraction returns null", async () => {
+  it("refreshAuth fails when the landing page has no CSRF token", async () => {
     const authMod = await import("../auth.js");
     (authMod.extractCsrfFromPage as any).mockReturnValueOnce(null);
+    mockBatchexecute();
+    const c = new NotebookLMClient({ ...tokens, csrf_token: "", session_id: "" });
+    await expect(c.refreshAuth()).rejects.toBeInstanceOf(AuthenticationError);
+  });
+
+  it("refreshAuth only warns when the session id is missing", async () => {
+    const authMod = await import("../auth.js");
     (authMod.extractSessionIdFromPage as any).mockReturnValueOnce(null);
     mockBatchexecute();
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const c = new NotebookLMClient({ ...tokens, csrf_token: "", session_id: "" });
     await c.refreshAuth();
-    const logged = errSpy.mock.calls.map((c) => c.join(" ")).join("\n");
-    expect(logged).toMatch(/Failed to extract CSRF token/);
-    expect(logged).toMatch(/Failed to extract Session ID/);
+    expect(errSpy.mock.calls.map((c) => c.join(" ")).join("\n")).toMatch(/Failed to extract Session ID/);
+    errSpy.mockRestore();
+  });
+
+  it("refreshAuth fails when NotebookLM redirects to Google sign-in", async () => {
+    server.use(
+      http.get(`${BASE_URL}/`, () => HttpResponse.redirect("https://accounts.google.com/ServiceLogin", 302)),
+      http.get("https://accounts.google.com/ServiceLogin", () => HttpResponse.text('<html>"SNlM0e":"x"</html>')),
+    );
+    const c = new NotebookLMClient({ ...tokens, csrf_token: "", session_id: "" });
+    await expect(c.refreshAuth()).rejects.toThrow(/sign-in/);
+  });
+
+  it("execute recovers through the auth refresh when the first landing page is signed out", async () => {
+    const authMod = await import("../auth.js");
+    (authMod.extractCsrfFromPage as any).mockReturnValueOnce(null);
+    (refreshCookiesHeadless as any).mockResolvedValue({
+      cookies: tokens.cookies,
+      csrf_token: "recovered-csrf",
+      session_id: "recovered-sid",
+      extracted_at: Date.now() / 1000 + 100,
+    });
+    const captured = mockBatchexecute({ [RPC_IDS.LIST_NOTEBOOKS]: [[]] });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(new NotebookLMClient({ ...tokens, csrf_token: "", session_id: "" }).listNotebooks()).resolves.toEqual([]);
+    expect(refreshCookiesHeadless).toHaveBeenCalled();
+    expect(captured.some((c) => c.rpcId === RPC_IDS.LIST_NOTEBOOKS)).toBe(true);
     errSpy.mockRestore();
   });
 
@@ -1055,10 +1086,9 @@ describe("refresh", () => {
     expect(out).toEqual([]);
   });
 
-  it("query body omits at= and f.sid= when AuthState has no csrf/sid", async () => {
+  it("query body omits f.sid= when the page has no session id", async () => {
     const authMod = await import("../auth.js");
-    // After refreshAuthTokens, both extracts return null → state stays empty.
-    (authMod.extractCsrfFromPage as any).mockReturnValueOnce(null);
+    // A missing CSRF token is an auth failure; a missing session id is tolerated.
     (authMod.extractSessionIdFromPage as any).mockReturnValueOnce(null);
 
     let capturedBody = "";
@@ -1076,7 +1106,7 @@ describe("refresh", () => {
     const c = new NotebookLMClient({ ...tokens, csrf_token: "", session_id: "" });
     await c.query("nb-1", "ask");
     expect(capturedBody.startsWith("f.req=")).toBe(true);
-    expect(capturedBody).not.toContain("at=");
+    expect(capturedBody).toContain("at=csrf");
     expect(capturedBody).not.toContain("f.sid=");
     errSpy.mockRestore();
   });

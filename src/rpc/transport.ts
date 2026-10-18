@@ -195,9 +195,11 @@ export class RpcTransport {
 
   /**
    * GET the NotebookLM landing page. Used by client.ts during CSRF
-   * refresh to scrape the embedded CSRF / session-id values.
+   * refresh to scrape the embedded CSRF / session-id values. `url` is the
+   * final URL after redirects, so a signed-out session (sent to Google
+   * sign-in) can be told apart from the real page.
    */
-  async fetchLandingHtml(timeout: number = DEFAULT_TIMEOUT): Promise<string> {
+  async fetchLandingHtml(timeout: number = DEFAULT_TIMEOUT): Promise<{ html: string; url: string }> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
 
@@ -211,7 +213,7 @@ export class RpcTransport {
         signal: controller.signal,
       });
 
-      return await response.text();
+      return { html: await response.text(), url: response.url };
     } finally {
       clearTimeout(timer);
     }

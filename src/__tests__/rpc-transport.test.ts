@@ -293,8 +293,18 @@ describe("RpcTransport.fetchLandingHtml", () => {
     const auth = fakeAuth();
     const t = new RpcTransport(auth as any, 30_000);
 
-    const html = await t.fetchLandingHtml();
+    const { html } = await t.fetchLandingHtml();
     expect(html).toContain("<body>land</body>");
+  });
+
+  it("reports the final url after redirects", async () => {
+    server.use(
+      http.get(`${BASE_URL}/`, () => HttpResponse.redirect("https://accounts.google.com/ServiceLogin", 302)),
+      http.get("https://accounts.google.com/ServiceLogin", () => HttpResponse.text("<html>sign in</html>")),
+    );
+    const t = new RpcTransport(fakeAuth() as any, 30_000);
+    const { url } = await t.fetchLandingHtml();
+    expect(new URL(url).hostname).toBe("accounts.google.com");
   });
 
   it("aborts the landing GET when the per-call timeout fires", async () => {
