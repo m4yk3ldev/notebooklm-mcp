@@ -50,21 +50,42 @@ export function parseResponse(responseText: string): unknown[] {
   return results;
 }
 
+// getSource's data[3] is [[blocks]]. Shapes recorded 2026-10:
+//   paragraph: [start, end, [runs, style]], run = [start, end, [text, attrs]]
+//   table:     [start, end, null, null, [rows, cols, [row, ...]]]
+//              row = [start, end, [cell, ...]], cell = [start, end, [block, ...]]
 export function extractTextFromBlocks(data: unknown): string {
-  if (!Array.isArray(data) || !Array.isArray(data[0])) return "";
-  let text = "";
-  for (const block of data[0]) {
-    try {
-      // Path discovered via deep inspection: block[2][2][0][0][2][0]
-      const content = block?.[2]?.[2]?.[0]?.[0]?.[2]?.[0];
-      if (typeof content === "string") {
-        text += content;
-      }
-    } catch {
-      // skip malformed blocks
-    }
+  const blocks = Array.isArray(data) && Array.isArray(data[0]) ? data[0][0] : null;
+  return Array.isArray(blocks) ? blocksText(blocks) : "";
+}
+
+function blocksText(blocks: unknown[]): string {
+  return blocks.map(blockText).filter((t) => t !== "").join("\n");
+}
+
+function blockText(block: unknown): string {
+  if (!Array.isArray(block)) return "";
+  const runs = Array.isArray(block[2]) ? block[2][0] : null;
+  if (Array.isArray(runs)) {
+    return runs
+      .map((run) =>
+        Array.isArray(run) && Array.isArray(run[2]) && typeof run[2][0] === "string" ? run[2][0] : "",
+      )
+      .join("");
   }
-  return text;
+  const rows = Array.isArray(block[4]) ? block[4][2] : null;
+  if (Array.isArray(rows)) {
+    return rows
+      .map((row) =>
+        (Array.isArray(row) && Array.isArray(row[2]) ? row[2] : [])
+          .map((cell: unknown) =>
+            Array.isArray(cell) && Array.isArray(cell[2]) ? blocksText(cell[2]).trim() : "",
+          )
+          .join(" | "),
+      )
+      .join("\n");
+  }
+  return "";
 }
 
 // Source rows (getNotebook's sources and getSource's data[0]) look like

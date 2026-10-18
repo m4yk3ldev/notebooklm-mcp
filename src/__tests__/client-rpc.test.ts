@@ -293,20 +293,19 @@ describe("source RPCs", () => {
   });
 
   it("getSource maps metadata and content blocks", async () => {
-    // Content path: data[3][0][N][2][2][0][0][2][0] — each block shape:
-    //   [_, _, [_, _, [ [ [_, _, ["text"]] ] ]]]
-    const block = (t: string) => [null, null, [null, null, [[[null, null, [t]]]]]];
+    // data[3] = [[blocks]]; block = [start, end, [runs, style]]; run = [s, e, [text]]
+    const block = (t: string) => [0, t.length, [[[0, t.length, [t]]], [null, 1]]];
     mockBatchexecute({
       [RPC_IDS.GET_SOURCE]: [
         [["s1"], "Title", [null, 1, null, null, 5]],
         null,
         null,
-        [[block("part1"), block("part2")]],
+        [[[block("part1"), block("part2")]]],
       ],
     });
     const s = await new NotebookLMClient(tokens).getSource("s1", "n1");
     expect(s.title).toBe("Title");
-    expect(s.content).toBe("part1part2");
+    expect(s.content).toBe("part1\npart2");
     expect(s.type).toBe("web_page");
   });
 
