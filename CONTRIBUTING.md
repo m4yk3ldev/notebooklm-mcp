@@ -13,6 +13,7 @@ cd notebooklm-mcp
 
 2. **Install dependencies**
 
+Requires **Node.js ≥ 20** (`engines` in `package.json`; CI tests 20, 22 and 24).
 This repo uses **pnpm** (pinned via the `packageManager` field in `package.json`).
 Use Corepack to get the matching pnpm version automatically:
 
@@ -142,6 +143,14 @@ make release-push   # runs pre-release audit, then pushes commit + tag to origin
 6. `npm audit signatures` — tampered or unsigned packages in `node_modules` (pnpm has no equivalent; npm CLI must be on PATH)
 7. `pnpm-lock.yaml` registry pinning — any transitive tarball resolves to a non-npm registry or any git/github resolution
 8. `npm pack --dry-run` — unexpected files (e.g. `src/`, `scripts/`, `.env`) in the publish manifest
+
+CI (`.github/workflows/publish.yml`) runs on every PR and push: gitleaks, then this same audit script and
+osv-scanner (`google/osv-scanner-action` on `pnpm-lock.yaml`) in parallel, then the tests on Node 20, 22 and 24.
+A tag `v*` additionally publishes to npm.
+
+Vulnerable dependencies are fixed, not ignored: bump the direct dependency, or pin the transitive one under
+`overrides:` in `pnpm-workspace.yaml` (pnpm 10 no longer reads the `pnpm` field in `package.json`). Do not add
+`osv-scanner.toml` ignores.
 
 Emergency override (logs the bypass):
 

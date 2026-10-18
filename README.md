@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Build Status](https://github.com/m4yk3ldev/notebooklm-mcp/actions/workflows/publish.yml/badge.svg)](https://github.com/m4yk3ldev/notebooklm-mcp/actions)
 
-Stop jumping between browser tabs. **NotebookLM MCP** brings the full analytical power of [Google NotebookLM](https://notebooklm.google.com) directly into your local terminal, IDE, and AI assistants like Claude, Cursor, and VS Code.
+Stop jumping between browser tabs. **NotebookLM MCP** brings the full analytical power of [Google NotebookLM](https://notebook.google.com) directly into your local terminal, IDE, and AI assistants like Claude, Cursor, and VS Code.
 
 Manage notebooks, ingest diverse sources, trigger deep research, and generate studio-quality content—all via a single, standardized Model Context Protocol (MCP) interface.
 
@@ -27,6 +27,8 @@ Manage notebooks, ingest diverse sources, trigger deep research, and generate st
 ## 🚀 Quick Start
 
 ### 1. Installation
+
+Requires **Node.js ≥ 20** and Google Chrome or Chromium (for `auth`).
 
 Run it instantly with `npx`:
 
@@ -764,6 +766,9 @@ notebooklm-mcp --version
 |---|---|---|
 | _"Could not find Google Chrome or Chromium"_ | No Chrome/Chromium on PATH | Install Chrome or run `notebooklm-mcp auth --manual` |
 | _"Authentication expired"_ inside the AI session | Cookies stale | The server auto-refreshes once; if it can't, re-run `notebooklm-mcp auth` |
+| _"NotebookLM redirected to … (Google sign-in)"_ or _"page has no CSRF token"_ | Google session signed out | Re-run `notebooklm-mcp auth`. The server does not open a browser on its own for this |
+| HTTP 401 with valid cookies (`v0.3.1` and older) | NotebookLM moved to `notebook.google.com` | Upgrade to the latest version |
+| `research_import` says _"Imported X of Y"_ with X < Y | NotebookLM could not fetch some URLs | Retry, or pick other results. Drive results are skipped; only web results import |
 | Tool calls hang past 2 min | Big studio job over default timeout | Restart server with `--query-timeout 300000` |
 | _"file_path … outside the allowed roots"_ | `notebook_add_text` got a path outside cwd / tmp | Copy the file into your working directory or pass `content` inline |
 | MCP client reports server crashed on startup | `dist/cli.js` missing (dev clone) | `pnpm install && pnpm run build` |

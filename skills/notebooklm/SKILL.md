@@ -92,7 +92,7 @@ After starting one, poll `studio_status` with the returned `artifact_id`. Each a
 
 ## When things fail
 
-- **Auth errors** (expired session, 401/403): call `refresh_auth` once. The server also tries to restore the session in the background. If it still fails, ask the user to run `npx -y @m4ykeldev/notebooklm-mcp auth` again, then retry.
+- **Auth errors** (expired session, 401/403): call `refresh_auth` once. The server also tries to restore the session in the background. If it still fails, or the error says the session is signed out (redirected to Google sign-in, no CSRF token), ask the user to run `npx -y @m4ykeldev/notebooklm-mcp auth` again, then retry.
 - **Timeouts on `notebook_query`**: suggest raising `--query-timeout`, or narrow the question with `source_ids`.
 - **Unexpected or empty responses**: Google changes NotebookLM's internal API without notice. Report the error to the user rather than retrying in a loop, and suggest updating the package (`npx -y @m4ykeldev/notebooklm-mcp@latest serve`) or opening an issue on the GitHub repo.
 - `save_auth_tokens` is a manual fallback for cookies. Use it only when the user hands you cookies explicitly, and never echo cookie values back in chat.

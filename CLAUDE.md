@@ -60,9 +60,9 @@ MCP Client (Claude/Cursor/VS Code)
 | `src/cli.ts` | Entry point; defines `serve` and `auth` CLI commands |
 | `src/server.ts` | Creates `McpServer`, wires tools to a lazily-initialized `NotebookLMClient` |
 | `src/client.ts` | `NotebookLMClient` — thin domain facade that composes the `rpc/*` modules. Public surface for tools. |
-| `src/rpc/transport.ts` | `RpcTransport` — HTTP POST/GET, `response.ok` enforcement, Set-Cookie merge, abort-bound body read |
+| `src/rpc/transport.ts` | `RpcTransport` — HTTP POST/GET, `response.ok` enforcement, Set-Cookie merge, abort-bound body read; `fetchLandingHtml` returns `{ html, url }` (final URL after redirects) |
 | `src/rpc/auth-state.ts` | `AuthState` — tokens / csrf / session id state, single-flight refresh mutex, disk reload |
-| `src/rpc/wire.ts` | Pure parsers — `parseResponse` (batchexecute envelope) and `extractTextFromBlocks` |
+| `src/rpc/wire.ts` | Pure parsers — `parseResponse` (batchexecute envelope), `extractTextFromBlocks` (source content incl. tables), `sourceTypeCode`, and the studio parsers `studioArtifactId` / `studioTypeName` / `studioDownloadUrl` |
 | `src/auth.ts` | Token load/save, cookie validation, manual auth flow |
 | `src/browser-auth.ts` | Chrome CDP-based automated cookie extraction (OS-assigned port, loopback bind) |
 | `src/constants.ts` | All `RPC_IDS`, CodeMapper enums, timeouts, URLs |
@@ -111,7 +111,15 @@ Token resolution order: `NOTEBOOKLM_COOKIES` env var → `~/.notebooklm-mcp/auth
 
 Automated auth uses Chrome DevTools Protocol (CDP) on an OS-assigned loopback port. `browser-auth.ts` launches Chrome with `--remote-debugging-port=0`, connects via WebSocket, and polls `Storage.getCookies`, keeping only cookies that apply to `BASE_URL` (`cookieAppliesToBase` — host-only cookies such as `OSID` exist once per Google host). It resolves once the required cookies (`SID`, `HSID`, `SSID`, `APISID`, `SAPISID`) are present and the tab is on NotebookLM (`isNotebookLmUrl`: `notebook.google.com`, or the legacy `notebooklm.google.com` which now 301s there).
 
-The `NotebookLMClient` auto-fetches CSRF token and session ID from the NotebookLM page HTML on first use, and can trigger headless browser refresh when session expires.
+The `NotebookLMClient` auto-fetches CSRF token and session ID from the NotebookLM page HTML on first use, and can trigger headless browser refresh when session expires. If the landing page ends outside NotebookLM (Google sign-in) or has no CSRF token, `refreshAuthTokens` throws `AuthenticationError` telling the user to run `auth`. That check runs before the recovery `try` in `execute()`/`query()` on purpose: a signed-out session must not start the headless/visible-browser recovery, which kills any Chrome on the shared profile. Recovery still runs for RPC-level auth failures (error code 16). A non-2xx landing page is a plain HTTP error.
+
+### Wire format and live verification
+
+The RPC payload and response shapes in `src/client.ts` / `src/rpc/wire.ts` were recorded from the web app on 2026-10-18 (comments say "recorded 2026-10"). Google changes them without notice and the MSW tests only replay recorded shapes, so a green suite does not prove a tool works: after any wire change, run the tool against real NotebookLM. Never call tools while `node dist/cli.js auth` is waiting for a login (they share the Chrome profile).
+
+### Dependencies and CI
+
+CI (`.github/workflows/publish.yml`): gitleaks → `scripts/pre-release.sh` (frozen install, build, tests, `pnpm audit` high+, signatures, lockfile pinning, pack preview) and osv-scanner in parallel → tests on Node 20/22/24 → npm publish on `v*` tags. Fix vulnerable dependencies by bumping or by `overrides:` in `pnpm-workspace.yaml`; never add `osv-scanner.toml` ignores. `engines.node` is `>=20`.
 
 ### Build Output
 
