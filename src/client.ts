@@ -36,7 +36,7 @@ import {
 } from "./auth.js";
 import { AuthState } from "./rpc/auth-state.js";
 import { RpcTransport } from "./rpc/transport.js";
-import { extractTextFromBlocks as extractWireText } from "./rpc/wire.js";
+import { extractTextFromBlocks as extractWireText, sourceTypeCode } from "./rpc/wire.js";
 
 export class AuthenticationError extends Error {
   constructor(message: string) {
@@ -205,7 +205,7 @@ export class NotebookLMClient {
           sources.push({
             id: Array.isArray(s[0]) ? s[0][0] : String(s[0]),
             title: s[1] || "Untitled",
-            type: SOURCE_TYPES.getName(s[3] ?? null),
+            type: SOURCE_TYPES.getName(sourceTypeCode(s)),
           });
         }
       }
@@ -415,7 +415,7 @@ export class NotebookLMClient {
     return {
       id: sourceId,
       title: meta?.[1] || "Untitled",
-      type: SOURCE_TYPES.getName(Array.isArray(meta?.[3]) ? meta[3][1] : meta?.[3]),
+      type: SOURCE_TYPES.getName(sourceTypeCode(meta)),
       content: extractWireText(data?.[3]),
       summary: null,
       keywords: [],

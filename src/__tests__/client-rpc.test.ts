@@ -162,8 +162,8 @@ describe("notebook RPCs", () => {
     mockBatchexecute({
       [RPC_IDS.GET_NOTEBOOK]: [
         ["NB", [
-          ["s1", "S1", null, 1],
-          ["s2", "S2", null, 5],
+          [["s1"], "S1", [null, 1, null, null, 3]],
+          [["s2"], "S2", [null, 1, null, null, 10]],
         ], "nb-1", "📓", null,
         [1, true, 2, null, null, [1700000100], null, null, [1700000000]]],
       ],
@@ -175,6 +175,8 @@ describe("notebook RPCs", () => {
     expect(nb.ownership).toBe("mine");
     expect(nb.sources).toHaveLength(2);
     expect(nb.sources[0].title).toBe("S1");
+    expect(nb.sources[0].type).toBe("pdf");
+    expect(nb.sources[1].type).toBe("media");
     expect(nb.created_at).toMatch(/^2023-/);
   });
 
@@ -296,7 +298,7 @@ describe("source RPCs", () => {
     const block = (t: string) => [null, null, [null, null, [[[null, null, [t]]]]]];
     mockBatchexecute({
       [RPC_IDS.GET_SOURCE]: [
-        ["s1", "Title", null, 5],
+        [["s1"], "Title", [null, 1, null, null, 5]],
         null,
         null,
         [[block("part1"), block("part2")]],
@@ -379,23 +381,6 @@ describe("source RPCs", () => {
       "application/vnd.google-apps.document",
     );
     expect(s.id).toBe("nested-drive-id");
-  });
-
-  it("getSource unwraps type code when API returns meta[3] as an array", async () => {
-    mockBatchexecute({
-      [RPC_IDS.GET_SOURCE]: [["s1", "Title", null, [null, 5]], null, null, null],
-    });
-    const s = await new NotebookLMClient(tokens).getSource("s1", "n1");
-    expect(s.title).toBe("Title");
-  });
-
-  it("getSource falls back when meta type is not an array (uses raw code)", async () => {
-    // meta[3] is a single number, not an array → meta?.[3] branch (else) runs.
-    mockBatchexecute({
-      [RPC_IDS.GET_SOURCE]: [["s1", "Title", null, 1], null, null, null],
-    });
-    const s = await new NotebookLMClient(tokens).getSource("s1", "n1");
-    expect(s.title).toBe("Title");
   });
 
   it("syncDrive loops through every source id", async () => {

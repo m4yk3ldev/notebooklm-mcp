@@ -66,3 +66,11 @@ export function extractTextFromBlocks(data: unknown): string {
   }
   return text;
 }
+
+// Source rows (getNotebook's sources and getSource's data[0]) look like
+// [[id], title, meta, ...]; the type code lives at meta[4].
+export function sourceTypeCode(row: unknown): number | null {
+  const meta = Array.isArray(row) ? row[2] : null;
+  const code = Array.isArray(meta) ? meta[4] : null;
+  return typeof code === "number" ? code : null;
+}

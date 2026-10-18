@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { parseResponse, extractTextFromBlocks } from "../rpc/wire.js";
+import { parseResponse, extractTextFromBlocks, sourceTypeCode } from "../rpc/wire.js";
 
 describe("parseResponse", () => {
   it("strips )]}' prefix and parses framed chunks", () => {
@@ -48,5 +48,18 @@ describe("extractTextFromBlocks", () => {
   it("does not throw on malformed nested shape", () => {
     expect(() => extractTextFromBlocks([1, 2, 3])).not.toThrow();
     expect(() => extractTextFromBlocks([[null]])).not.toThrow();
+  });
+});
+
+describe("sourceTypeCode", () => {
+  it("reads the type code from row[2][4] (recorded getNotebook row)", () => {
+    const row = [["fb76"], "Inline note", [null, 14, [1792328579, 918646000], ["6507", [1792328578, 608326000]], 4, null, 1], [null, 2]];
+    expect(sourceTypeCode(row)).toBe(4);
+  });
+
+  it("returns null for rows without a meta block", () => {
+    expect(sourceTypeCode(["id", "T", null, 5])).toBeNull();
+    expect(sourceTypeCode(null)).toBeNull();
+    expect(sourceTypeCode([["id"], "T", [null, 1, null, null, "x"]])).toBeNull();
   });
 });

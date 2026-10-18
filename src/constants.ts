@@ -88,6 +88,7 @@ export const SOURCE_TYPES = new CodeMapper({
   web_page: 5,
   generated_text: 8,
   youtube: 9,
+  media: 10,
   uploaded_file: 11,
   image: 13,
   word_doc: 14,
