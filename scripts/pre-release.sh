@@ -101,7 +101,8 @@ step 8 "npm pack --dry-run (publish manifest preview)"
 PACK_OUT="$(npm pack --dry-run --json)"
 echo "$PACK_OUT" | node -e '
   const data = JSON.parse(require("fs").readFileSync(0, "utf8"));
-  const pkg = data[0];
+  // npm <= 11 prints an array of packages; npm 12 an object keyed by name.
+  const pkg = Array.isArray(data) ? data[0] : Object.values(data)[0];
   const bad = pkg.files.filter(f =>
     /(^|\/)(\.env|auth\.json|\.git|node_modules|src|scripts|tests?|__tests__)(\/|$)/i.test(f.path)
   );
