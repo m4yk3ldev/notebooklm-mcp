@@ -673,14 +673,14 @@ describe("studio create RPCs", () => {
     ["createSlideDeck", {}],
     ["createFlashcards", "easy"],
   ] as const)("%s returns artifact id", async (method, extra) => {
-    mockBatchexecute({ [RPC_IDS.CREATE_STUDIO]: ["art"] });
+    mockBatchexecute({ [RPC_IDS.CREATE_STUDIO]: [["art", "T", 1]] });
     const c = new NotebookLMClient(tokens);
     const id = await (c as any)[method]("n1", ["s1"], extra);
     expect(id).toBe("art");
   });
 
   it("createReport uses custom prompt when format=Create Your Own", async () => {
-    const captured = mockBatchexecute({ [RPC_IDS.CREATE_STUDIO]: ["art"] });
+    const captured = mockBatchexecute({ [RPC_IDS.CREATE_STUDIO]: [["art", "T", 1]] });
     await new NotebookLMClient(tokens).createReport("n1", ["s1"], {
       report_format: "Create Your Own",
       custom_prompt: "my-prompt",
@@ -690,7 +690,7 @@ describe("studio create RPCs", () => {
   });
 
   it("createReport falls back to Briefing Doc on unknown format", async () => {
-    mockBatchexecute({ [RPC_IDS.CREATE_STUDIO]: ["art"] });
+    mockBatchexecute({ [RPC_IDS.CREATE_STUDIO]: [["art", "T", 1]] });
     const id = await new NotebookLMClient(tokens).createReport("n1", ["s1"], {
       report_format: "Not A Real Format",
     });
@@ -698,7 +698,7 @@ describe("studio create RPCs", () => {
   });
 
   it("createReport uses empty custom_prompt fallback when 'Create Your Own' selected without prompt", async () => {
-    mockBatchexecute({ [RPC_IDS.CREATE_STUDIO]: ["art"] });
+    mockBatchexecute({ [RPC_IDS.CREATE_STUDIO]: [["art", "T", 1]] });
     const id = await new NotebookLMClient(tokens).createReport("n1", ["s1"], {
       report_format: "Create Your Own",
     });
@@ -726,7 +726,7 @@ describe("studio create RPCs", () => {
   });
 
   it("createQuiz passes question_count", async () => {
-    mockBatchexecute({ [RPC_IDS.CREATE_STUDIO]: ["art"] });
+    mockBatchexecute({ [RPC_IDS.CREATE_STUDIO]: [["art", "T", 1]] });
     const id = await new NotebookLMClient(tokens).createQuiz("n1", ["s1"], 7, "hard");
     expect(id).toBe("art");
   });
@@ -734,7 +734,7 @@ describe("studio create RPCs", () => {
   it("pollStudio parses artifacts and status codes", async () => {
     mockBatchexecute({
       [RPC_IDS.POLL_STUDIO]: [[
-        ["a1", "T", 1, null, 3, "http://dl/a1"],
+        ["a1", "T", 1, null, 3, null, [null, null, null, null, null, [["http://dl/a1", 1, "audio/mp4"]]]],
         ["a2", "T", 3, null, 2, null],
         ["a3", "T", 9, null, 99, null],
         "not-array",
@@ -746,6 +746,15 @@ describe("studio create RPCs", () => {
     expect(arts[0].download_url).toBe("http://dl/a1");
     expect(arts[1].status).toBe("generating");
     expect(arts[2].status).toBe("pending");
+  });
+
+  it("pollStudio labels quiz rows and leaves text artifacts without a url", async () => {
+    const quiz: unknown[] = ["q1", "T", 4, null, 3, null, null, null, null, ["", [2]]];
+    const report: unknown[] = ["r1", "T", 2, null, 3, null, null, ["# md"]];
+    mockBatchexecute({ [RPC_IDS.POLL_STUDIO]: [[quiz, report]] });
+    const arts = await new NotebookLMClient(tokens).pollStudio("n1");
+    expect(arts.map((a) => a.type)).toEqual(["quiz", "report"]);
+    expect(arts.map((a) => a.download_url)).toEqual([null, null]);
   });
 
   it("pollStudio returns empty for non-array response", async () => {

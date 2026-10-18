@@ -3,6 +3,8 @@
 // Extracted from src/client.ts so they can be tested in isolation and
 // reused without dragging in transport/auth state.
 
+import { STUDIO_TYPES } from "../constants.js";
+
 export function parseResponse(responseText: string): unknown[] {
   let text = responseText;
   if (text.startsWith(")]}'")) {
@@ -94,4 +96,47 @@ export function sourceTypeCode(row: unknown): number | null {
   const meta = Array.isArray(row) ? row[2] : null;
   const code = Array.isArray(meta) ? meta[4] : null;
   return typeof code === "number" ? code : null;
+}
+
+// CREATE_STUDIO answers [[id, title, type, ...]] — the new artifact's row.
+export function studioArtifactId(data: unknown): string {
+  const row = Array.isArray(data) ? data[0] : null;
+  return Array.isArray(row) && typeof row[0] === "string" ? row[0] : "";
+}
+
+// Quiz and flashcards share type code 4; row[9][1][0] is the variant sent on
+// create (1 = flashcards, 2 = quiz).
+export function studioTypeName(row: any[]): string {
+  const code = typeof row[2] === "number" ? row[2] : null;
+  if (code === STUDIO_TYPES.getCode("flashcards") && row[9]?.[1]?.[0] === 2) return "quiz";
+  return STUDIO_TYPES.getName(code);
+}
+
+// Where a finished artifact keeps its file (recorded 2026-10):
+//   audio       row[6][5]  media list [[url, variant, mime], ...]; variant 1 = plain stream
+//   video       row[8][4]  same media list
+//   infographic row[14][2][0][1][0]  image url
+//   slide_deck  row[16][3] PDF (row[16][4] is the PPTX)
+// Report, flashcards and quiz have no file.
+export function studioDownloadUrl(row: any[]): string | null {
+  const plainStream = (list: unknown): unknown =>
+    Array.isArray(list)
+      ? list.find((e) => Array.isArray(e) && e[1] === 1 && typeof e[0] === "string")?.[0]
+      : null;
+  let url: unknown = null;
+  switch (row[2]) {
+    case STUDIO_TYPES.getCode("audio"):
+      url = plainStream(row[6]?.[5]);
+      break;
+    case STUDIO_TYPES.getCode("video"):
+      url = plainStream(row[8]?.[4]);
+      break;
+    case STUDIO_TYPES.getCode("infographic"):
+      url = row[14]?.[2]?.[0]?.[1]?.[0];
+      break;
+    case STUDIO_TYPES.getCode("slide_deck"):
+      url = row[16]?.[3];
+      break;
+  }
+  return typeof url === "string" ? url : null;
 }

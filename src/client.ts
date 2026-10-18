@@ -36,7 +36,13 @@ import {
 } from "./auth.js";
 import { AuthState } from "./rpc/auth-state.js";
 import { RpcTransport } from "./rpc/transport.js";
-import { extractTextFromBlocks as extractWireText, sourceTypeCode } from "./rpc/wire.js";
+import {
+  extractTextFromBlocks as extractWireText,
+  sourceTypeCode,
+  studioArtifactId,
+  studioDownloadUrl,
+  studioTypeName,
+} from "./rpc/wire.js";
 
 export class AuthenticationError extends Error {
   constructor(message: string) {
@@ -757,8 +763,7 @@ export class NotebookLMClient {
       [[2], notebookId, content],
       `/notebook/${notebookId}`,
     );
-    const data = result as any[];
-    return data?.[0] || "";
+    return studioArtifactId(result);
   }
 
   async createVideoOverview(
@@ -808,8 +813,7 @@ export class NotebookLMClient {
       [[2], notebookId, content],
       `/notebook/${notebookId}`,
     );
-    const data = result as any[];
-    return data?.[0] || "";
+    return studioArtifactId(result);
   }
 
   async createInfographic(
@@ -855,8 +859,7 @@ export class NotebookLMClient {
       [[2], notebookId, content],
       `/notebook/${notebookId}`,
     );
-    const data = result as any[];
-    return data?.[0] || "";
+    return studioArtifactId(result);
   }
 
   async createSlideDeck(
@@ -899,8 +902,7 @@ export class NotebookLMClient {
       [[2], notebookId, content],
       `/notebook/${notebookId}`,
     );
-    const data = result as any[];
-    return data?.[0] || "";
+    return studioArtifactId(result);
   }
 
   async createReport(
@@ -952,8 +954,7 @@ export class NotebookLMClient {
       [[2], notebookId, content],
       `/notebook/${notebookId}`,
     );
-    const data = result as any[];
-    return data?.[0] || "";
+    return studioArtifactId(result);
   }
 
   async createFlashcards(
@@ -987,8 +988,7 @@ export class NotebookLMClient {
       [[2], notebookId, content],
       `/notebook/${notebookId}`,
     );
-    const data = result as any[];
-    return data?.[0] || "";
+    return studioArtifactId(result);
   }
 
   async createQuiz(
@@ -1023,8 +1023,7 @@ export class NotebookLMClient {
       [[2], notebookId, content],
       `/notebook/${notebookId}`,
     );
-    const data = result as any[];
-    return data?.[0] || "";
+    return studioArtifactId(result);
   }
 
   async pollStudio(notebookId: string): Promise<StudioArtifact[]> {
@@ -1049,12 +1048,11 @@ export class NotebookLMClient {
         4: "failed",
       };
 
-      // Google format: [id, title, type, sources, status, ...]
       artifacts.push({
         id: item[0] || "",
-        type: STUDIO_TYPES.getName(item[2] ?? null),
+        type: studioTypeName(item),
         status: statusMap[item[4]] || "pending",
-        download_url: item[5] || null,
+        download_url: studioDownloadUrl(item),
       });
     }
 

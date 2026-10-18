@@ -1,5 +1,12 @@
 import { describe, it, expect, vi } from "vitest";
-import { parseResponse, extractTextFromBlocks, sourceTypeCode } from "../rpc/wire.js";
+import {
+  parseResponse,
+  extractTextFromBlocks,
+  sourceTypeCode,
+  studioArtifactId,
+  studioDownloadUrl,
+  studioTypeName,
+} from "../rpc/wire.js";
 
 describe("parseResponse", () => {
   it("strips )]}' prefix and parses framed chunks", () => {
@@ -88,5 +95,37 @@ describe("sourceTypeCode", () => {
     expect(sourceTypeCode(["id", "T", null, 5])).toBeNull();
     expect(sourceTypeCode(null)).toBeNull();
     expect(sourceTypeCode([["id"], "T", [null, 1, null, null, "x"]])).toBeNull();
+  });
+});
+
+describe("studio parsers", () => {
+  const row = (type: number, extra: Record<number, unknown> = {}) => {
+    const r: unknown[] = new Array(38).fill(null);
+    r[0] = "art-1"; r[1] = "T"; r[2] = type; r[4] = 3;
+    for (const [i, v] of Object.entries(extra)) r[Number(i)] = v;
+    return r as any[];
+  };
+
+  it("studioArtifactId unwraps the created row", () => {
+    expect(studioArtifactId([["8647c586", "T", 2]])).toBe("8647c586");
+    expect(studioArtifactId([])).toBe("");
+    expect(studioArtifactId(null)).toBe("");
+  });
+
+  it("studioTypeName splits quiz from flashcards by row[9][1][0]", () => {
+    expect(studioTypeName(row(4, { 9: ["", [2, null, null, "es-419"]] }))).toBe("quiz");
+    expect(studioTypeName(row(4, { 9: ["", [1, null, null, "es-419"]] }))).toBe("flashcards");
+    expect(studioTypeName(row(8))).toBe("slide_deck");
+  });
+
+  it("studioDownloadUrl picks the per-type file (recorded shapes)", () => {
+    expect(studioDownloadUrl(row(1, { 6: [null, null, "u-direct", "u-dv", false,
+      [["u-dv", 4, "audio/mp4"], ["u-audio", 1, "audio/mp4"], ["u-hls", 2], ["u-dash", 3]]] }))).toBe("u-audio");
+    expect(studioDownloadUrl(row(3, { 8: [null, "u", null, "u-dv",
+      [["u-video", 1, "video/mp4"], ["u-hls", 2], ["u-dash", 3], ["u-dv", 4, "video/mp4"]]] }))).toBe("u-video");
+    expect(studioDownloadUrl(row(7, { 14: [null, "T", [["T", ["u-image", 2048, 2048], "desc"]]] }))).toBe("u-image");
+    expect(studioDownloadUrl(row(8, { 16: [null, "T", [], "u-pdf", "u-pptx"] }))).toBe("u-pdf");
+    expect(studioDownloadUrl(row(2, { 7: ["# Report"] }))).toBeNull();
+    expect(studioDownloadUrl(row(1))).toBeNull();
   });
 });
