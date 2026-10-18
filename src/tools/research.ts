@@ -35,11 +35,11 @@ export const researchTools: McpTool<any>[] = [
     schema: {
       notebook_id: z.string().describe("The notebook ID"),
       task_id: z.string().describe("Research task ID"),
-      source_indices: z.array(z.number()).optional().describe("Specific source indices to import (omit for all)"),
+      source_indices: z.array(z.number()).optional().describe("Indices into the task's sources as listed by research_status (omit for all)"),
     },
     execute: async (client, { notebook_id, task_id, source_indices }) => {
-      await client.importResearch(notebook_id, task_id, source_indices);
-      return { message: "Research sources imported" };
+      const imported = await client.importResearch(notebook_id, task_id, source_indices);
+      return { message: `Imported ${imported} research sources` };
     },
   },
 ];

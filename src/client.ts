@@ -700,14 +700,38 @@ export class NotebookLMClient {
     notebookId: string,
     taskId: string,
     sourceIndices?: number[],
-  ): Promise<void> {
-    const indices = sourceIndices || null;
+  ): Promise<number> {
+    const task = (await this.pollResearch(notebookId, taskId))[0];
+    if (!task) {
+      throw new Error(`Research task ${taskId} not found in notebook ${notebookId}.`);
+    }
+    if (task.status === "in_progress") {
+      throw new Error(`Research task ${taskId} is still running; wait until research_status reports "completed".`);
+    }
+    const picked = sourceIndices
+      ? sourceIndices.map((i) => {
+          const s = task.sources[i];
+          if (!s) {
+            throw new Error(`Source index ${i} out of range (task has ${task.sources.length} sources).`);
+          }
+          return s;
+        })
+      : task.sources;
+    // Only web results have been observed on the wire; Drive results carry no
+    // URL and their import shape is unknown.
+    const withoutUrl = picked.filter((s) => !s.url).length;
+    if (withoutUrl > 0) {
+      throw new Error(`Only web results can be imported; ${withoutUrl} selected source(s) have no URL.`);
+    }
+    // Entry shape recorded from the web app (2026-10).
+    const entries = picked.map((s) => [null, null, [s.url, s.title], null, null, null, null, null, null, null, 2]);
     await this.execute(
       RPC_IDS.IMPORT_RESEARCH,
-      [notebookId, taskId, indices],
+      [CLIENT_CONTEXT, [1], taskId, notebookId, entries],
       `/notebook/${notebookId}`,
       EXTENDED_TIMEOUT,
     );
+    return entries.length;
   }
 
   // ─── Studio Methods ──────────────────────────────────

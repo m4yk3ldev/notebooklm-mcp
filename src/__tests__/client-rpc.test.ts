@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from "vites
 import { setupServer } from "msw/node";
 import { http, HttpResponse } from "msw";
 import { NotebookLMClient, AuthenticationError } from "../client.js";
-import { BASE_URL, BATCHEXECUTE_PATH, QUERY_PATH, RPC_IDS } from "../constants.js";
+import { BASE_URL, BATCHEXECUTE_PATH, CLIENT_CONTEXT, QUERY_PATH, RPC_IDS } from "../constants.js";
 
 vi.mock("../browser-auth.js", () => ({
   refreshCookiesHeadless: vi.fn(),
@@ -636,18 +636,54 @@ describe("research RPCs", () => {
     expect(await new NotebookLMClient(tokens).pollResearch("n1")).toEqual([]);
   });
 
-  it("importResearch forwards indices", async () => {
-    mockBatchexecute({ [RPC_IDS.IMPORT_RESEARCH]: [] });
-    await expect(
-      new NotebookLMClient(tokens).importResearch("n1", "t1", [0, 2]),
-    ).resolves.toBeUndefined();
+  const pollWith = (status: number, sources: unknown[]) => [[
+    ["t1", ["n1", ["query", 1], 1, [sources, "summary"], status]],
+  ]];
+  const web = (u: string) => [u, `Title ${u}`, "desc", 1, null, null, null, true];
+  const importParams = (captured: { rpcId: string; body: string }[]) => {
+    const body = captured.find((c) => c.rpcId === RPC_IDS.IMPORT_RESEARCH)!.body;
+    const fReq = decodeURIComponent(body.split("f.req=")[1].split("&")[0]);
+    return JSON.parse(JSON.parse(fReq)[0][0][1]);
+  };
+
+  it("importResearch sends the web app's payload for the chosen sources", async () => {
+    const captured = mockBatchexecute({
+      [RPC_IDS.POLL_RESEARCH]: pollWith(2, [web("https://a"), web("https://b"), web("https://c")]),
+      [RPC_IDS.IMPORT_RESEARCH]: [],
+    });
+    const n = await new NotebookLMClient(tokens).importResearch("n1", "t1", [0, 2]);
+    expect(n).toBe(2);
+    const p = importParams(captured);
+    expect(p[0]).toEqual(CLIENT_CONTEXT);
+    expect(p.slice(1, 4)).toEqual([[1], "t1", "n1"]);
+    expect(p[4]).toEqual([
+      [null, null, ["https://a", "Title https://a"], null, null, null, null, null, null, null, 2],
+      [null, null, ["https://c", "Title https://c"], null, null, null, null, null, null, null, 2],
+    ]);
   });
 
-  it("importResearch defaults indices to null when omitted", async () => {
-    mockBatchexecute({ [RPC_IDS.IMPORT_RESEARCH]: [] });
-    await expect(
-      new NotebookLMClient(tokens).importResearch("n1", "t1"),
-    ).resolves.toBeUndefined();
+  it("importResearch imports every source when indices are omitted", async () => {
+    const captured = mockBatchexecute({
+      [RPC_IDS.POLL_RESEARCH]: pollWith(2, [web("https://a"), web("https://b")]),
+      [RPC_IDS.IMPORT_RESEARCH]: [],
+    });
+    expect(await new NotebookLMClient(tokens).importResearch("n1", "t1")).toBe(2);
+    expect(importParams(captured)[4]).toHaveLength(2);
+  });
+
+  it("importResearch rejects unknown tasks, running tasks, bad indices and url-less sources", async () => {
+    const c = () => new NotebookLMClient(tokens);
+    mockBatchexecute({ [RPC_IDS.POLL_RESEARCH]: [[]] });
+    await expect(c().importResearch("n1", "t1")).rejects.toThrow(/not found/);
+    server.resetHandlers();
+    mockBatchexecute({ [RPC_IDS.POLL_RESEARCH]: pollWith(1, [web("https://a")]) });
+    await expect(c().importResearch("n1", "t1")).rejects.toThrow(/still running/);
+    server.resetHandlers();
+    mockBatchexecute({ [RPC_IDS.POLL_RESEARCH]: pollWith(2, [web("https://a")]) });
+    await expect(c().importResearch("n1", "t1", [5])).rejects.toThrow(/out of range/);
+    server.resetHandlers();
+    mockBatchexecute({ [RPC_IDS.POLL_RESEARCH]: pollWith(2, [[null, "Drive doc", null, 2]]) });
+    await expect(c().importResearch("n1", "t1")).rejects.toThrow(/no URL/);
   });
 
   it("startResearch fast mode defaults taskId to empty when API returns []", async () => {
