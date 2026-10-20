@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `glama.json` names the maintainer for the Glama directory listing.
 
+### Security
+- vite 8.0.16 → 8.3.4 through a `pnpm-workspace.yaml` override (GHSA-587h-7wmj-h5pm,
+  GHSA-698v-4r3x-3vcv, GHSA-r825-w8mm-5pxw). vite is a dev-only dependency of
+  vitest and is not part of the published package.
+
 ## [0.5.0] - 2026-10-20
 
 ### Added
