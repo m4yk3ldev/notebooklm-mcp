@@ -3,3 +3,7 @@ overrides:
   # GHSA-g7r4-m6w7-qqqr: tsup 8 pins esbuild ^0.27; the fix is 0.28.1.
   # Build verified with tsup 8.5.1. Drop this once tsup ships esbuild >=0.28.1.
   esbuild: 0.28.2
+  # GHSA-587h-7wmj-h5pm, GHSA-698v-4r3x-3vcv, GHSA-r825-w8mm-5pxw: vite <8.1.6,
+  # pulled in by vitest (dev only). vitest accepts ^8; drop this once its
+  # lockfile resolution moves past 8.1.6 on its own.
+  vite: 8.3.4
