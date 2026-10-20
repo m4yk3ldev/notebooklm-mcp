@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-10-20
+
+A clearer tool catalog for the model: every tool now says what it returns, carries
+MCP annotations, and follows one naming scheme. Several bugs found while rewriting
+it are fixed (#9).
+
+### Changed (BREAKING)
+- Tools renamed to one `resource_action` scheme. Update prompts and client
+  allow-lists that name the old tools (e.g. `mcp__notebooklm__notebook_add_url`):
+  - `notebook_add_url` / `notebook_add_text` / `notebook_add_drive` →
+    `source_add_url` / `source_add_text` / `source_add_drive`
+  - `source_describe` → `source_get`
+  - `notebook_describe` → `notebook_summarize`
+  - `refresh_auth` / `save_auth_tokens` → `auth_refresh` / `auth_save_tokens`
+- `source_get` returns `id`, `title`, `type` and `content_length`; the full text
+  stays in `source_get_content`. The always-empty `summary` and `keywords` are gone.
+
+### Added
+- Every tool has a title, MCP annotations (read-only, destructive, idempotent,
+  open-world) and a description of what it returns; every parameter is described.
+- The server sends usage instructions to clients at initialization and reports
+  its real version (it reported 0.1.0).
+- `source_add_url`, `source_add_text` and `source_add_drive` return the created
+  source, including its id.
+- `notebook_summarize` also returns the questions NotebookLM suggests asking.
+
+### Fixed
+- `notebook_summarize` returned a nested array instead of the summary text.
+- `auth_save_tokens` with an incomplete cookie set overwrote the stored session
+  and signed the user out; it now refuses and keeps the session.
+- `source_add_text` rejects a symlink that points outside the allowed folders.
+- `source_add_drive` reports the source type from the MIME type (it always said
+  `google_docs`); YouTube URLs are recognised by hostname.
+- `report_create` rejects an unknown `report_format` instead of silently making a
+  Briefing Doc.
+- An unrecognised research status is reported as `unknown`, not `in_progress`.
+- `source_add_url` explains when NotebookLM cannot fetch the page.
+- The npm description says 27 tools, not 32.
+
+### CI
+- GitHub Actions moved off the deprecated Node 20 runtime (`pnpm/action-setup` v6,
+  `action-gh-release` v3) and runners pinned to Ubuntu 24.04 (#10).
+
 ## [0.3.2] - 2026-10-18
 
 Google moved NotebookLM to `notebook.google.com` and changed several internal
