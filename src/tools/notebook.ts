@@ -23,7 +23,7 @@ export const notebookTools: McpTool<any>[] = [
     title: "Create notebook",
     description:
       "Create an empty NotebookLM notebook. Returns the new notebook with its id and title. Check notebook_list first " +
-      "to avoid a duplicate, then add sources with notebook_add_url, notebook_add_text or notebook_add_drive.",
+      "to avoid a duplicate, then add sources with source_add_url, source_add_text or source_add_drive.",
     annotations: CREATES,
     schema: {
       title: z.string().describe("Title for the new notebook"),
@@ -50,7 +50,7 @@ export const notebookTools: McpTool<any>[] = [
     },
   },
   {
-    name: "notebook_describe",
+    name: "notebook_summarize",
     title: "Summarise notebook",
     description:
       "Ask NotebookLM for an AI-generated overview of the whole notebook. Returns a short summary of what its sources " +

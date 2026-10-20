@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 
-// notebook_add_text accepts a file_path from the MCP client. Without
+// source_add_text accepts a file_path from the MCP client. Without
 // validation, a hostile prompt could read arbitrary local files
 // (~/.ssh/id_rsa, /etc/passwd, etc) and ship them to NotebookLM as a
 // "source". Restrict to files under the server's CWD or the OS temp
@@ -28,7 +28,7 @@ export function resolveAllowedReadPath(filePath: string): string {
 
 export const sourceTools: McpTool<any>[] = [
   {
-    name: "source_describe",
+    name: "source_get",
     title: "Describe source",
     description:
       "Get one source's metadata. Returns its id, title, type (web_page, youtube, pasted_text, pdf, google_docs, ...) " +
@@ -64,7 +64,7 @@ export const sourceTools: McpTool<any>[] = [
     },
   },
   {
-    name: "notebook_add_url",
+    name: "source_add_url",
     title: "Add web page or YouTube source",
     description:
       "Add a web page or a YouTube video to a notebook by URL. NotebookLM fetches the page itself, so it must be publicly " +
@@ -81,7 +81,7 @@ export const sourceTools: McpTool<any>[] = [
     },
   },
   {
-    name: "notebook_add_text",
+    name: "source_add_text",
     title: "Add text source",
     description:
       "Add text as a source. Pass the text in content, or a file_path to read it from a local file. file_path must sit " +
@@ -111,7 +111,7 @@ export const sourceTools: McpTool<any>[] = [
     },
   },
   {
-    name: "notebook_add_drive",
+    name: "source_add_drive",
     title: "Add Google Drive source",
     description:
       "Add a Google Drive file as a source, by its Drive file ID and MIME type. Returns the new source (id, title, type). " +

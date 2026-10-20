@@ -79,7 +79,7 @@ describe("notebookTools", () => {
     expect(result.message).toContain("X");
   });
 
-  it("notebook_get and notebook_describe pass through", async () => {
+  it("notebook_get and notebook_summarize pass through", async () => {
     const client = {
       getNotebook: vi.fn().mockResolvedValue({ id: "n1", sources: [] }),
       describeNotebook: vi.fn().mockResolvedValue("summary text"),
@@ -89,7 +89,7 @@ describe("notebookTools", () => {
       { notebook_id: "n1" },
       noopOpts(),
     );
-    const described = await findTool(notebookTools, "notebook_describe").execute(
+    const described = await findTool(notebookTools, "notebook_summarize").execute(
       client,
       { notebook_id: "n1" },
       noopOpts(),
@@ -100,9 +100,9 @@ describe("notebookTools", () => {
 });
 
 describe("sourceTools", () => {
-  it("source_describe calls getSource", async () => {
+  it("source_get calls getSource", async () => {
     const client = { getSource: vi.fn().mockResolvedValue({ id: "s1", content: "c" }) };
-    const result = await findTool(sourceTools, "source_describe").execute(
+    const result = await findTool(sourceTools, "source_get").execute(
       client,
       { notebook_id: "n1", source_id: "s1" },
       noopOpts(),
@@ -111,10 +111,10 @@ describe("sourceTools", () => {
     expect(result.source.id).toBe("s1");
   });
 
-  it("source_describe leaves the full text to source_get_content", async () => {
+  it("source_get leaves the full text to source_get_content", async () => {
     // getSource never fills summary/keywords (the source-guide RPC is not wired), so they are not echoed.
     const client = { getSource: vi.fn().mockResolvedValue({ id: "s1", title: "T", type: "pdf", content: "x".repeat(5000), summary: null, keywords: [] }) };
-    const result = await findTool(sourceTools, "source_describe").execute(
+    const result = await findTool(sourceTools, "source_get").execute(
       client,
       { notebook_id: "n1", source_id: "s1" },
       noopOpts(),
@@ -132,10 +132,10 @@ describe("sourceTools", () => {
     expect(result.text).toBe("body");
   });
 
-  it("notebook_add_url returns the created source", async () => {
+  it("source_add_url returns the created source", async () => {
     const created = { id: "s9", title: "X", type: "web_page" };
     const client = { addUrlSource: vi.fn().mockResolvedValue(created) };
-    const result = await findTool(sourceTools, "notebook_add_url").execute(
+    const result = await findTool(sourceTools, "source_add_url").execute(
       client,
       { notebook_id: "n1", url: "https://x" },
       noopOpts(),
@@ -145,7 +145,7 @@ describe("sourceTools", () => {
     expect(result.message).toBe("URL source added");
   });
 
-  describe("notebook_add_text", () => {
+  describe("source_add_text", () => {
     let tempDir: string;
     beforeEach(() => {
       tempDir = mkdtempSync(join(tmpdir(), "notebooklm-add-text-"));
@@ -157,7 +157,7 @@ describe("sourceTools", () => {
     it("uses inline content when provided and returns the created source", async () => {
       const created = { id: "s8", title: "T", type: "pasted_text" };
       const client = { addTextSource: vi.fn().mockResolvedValue(created) };
-      const result = await findTool(sourceTools, "notebook_add_text").execute(
+      const result = await findTool(sourceTools, "source_add_text").execute(
         client,
         { notebook_id: "n1", content: "hello", title: "T" },
         noopOpts(),
@@ -170,7 +170,7 @@ describe("sourceTools", () => {
       const filePath = join(tempDir, "src.txt");
       writeFileSync(filePath, "from-file");
       const client = { addTextSource: vi.fn().mockResolvedValue(undefined) };
-      await findTool(sourceTools, "notebook_add_text").execute(
+      await findTool(sourceTools, "source_add_text").execute(
         client,
         { notebook_id: "n1", file_path: filePath, title: "T" },
         noopOpts(),
@@ -181,7 +181,7 @@ describe("sourceTools", () => {
     it("throws when neither content nor file_path given", async () => {
       const client = { addTextSource: vi.fn() };
       await expect(
-        findTool(sourceTools, "notebook_add_text").execute(
+        findTool(sourceTools, "source_add_text").execute(
           client,
           { notebook_id: "n1", title: "T" },
           noopOpts(),
@@ -193,7 +193,7 @@ describe("sourceTools", () => {
       const client = { addTextSource: vi.fn() };
       // /etc/passwd is outside both cwd and tmpdir on every test host.
       await expect(
-        findTool(sourceTools, "notebook_add_text").execute(
+        findTool(sourceTools, "source_add_text").execute(
           client,
           { notebook_id: "n1", file_path: "/etc/passwd", title: "T" },
           noopOpts(),
@@ -205,7 +205,7 @@ describe("sourceTools", () => {
     it("rejects relative traversal that escapes cwd", async () => {
       const client = { addTextSource: vi.fn() };
       await expect(
-        findTool(sourceTools, "notebook_add_text").execute(
+        findTool(sourceTools, "source_add_text").execute(
           client,
           {
             notebook_id: "n1",
@@ -223,7 +223,7 @@ describe("sourceTools", () => {
       const filePath = join(tempDir, "src.txt");
       writeFileSync(filePath, "from-tmp");
       const client = { addTextSource: vi.fn().mockResolvedValue(undefined) };
-      await findTool(sourceTools, "notebook_add_text").execute(
+      await findTool(sourceTools, "source_add_text").execute(
         client,
         { notebook_id: "n1", file_path: filePath, title: "T" },
         noopOpts(),
@@ -232,10 +232,10 @@ describe("sourceTools", () => {
     });
   });
 
-  it("notebook_add_drive calls addDriveSource with all args and returns the source", async () => {
+  it("source_add_drive calls addDriveSource with all args and returns the source", async () => {
     const created = { id: "s7", title: "T", type: "google_doc" };
     const client = { addDriveSource: vi.fn().mockResolvedValue(created) };
-    const driveResult = await findTool(sourceTools, "notebook_add_drive").execute(
+    const driveResult = await findTool(sourceTools, "source_add_drive").execute(
       client,
       {
         notebook_id: "n1",
@@ -508,9 +508,9 @@ describe("researchTools", () => {
 describe("authTools", () => {
   beforeEach(() => vi.mocked(saveTokens).mockClear());
 
-  it("refresh_auth delegates to client.refreshAuth", async () => {
+  it("auth_refresh delegates to client.refreshAuth", async () => {
     const client = { refreshAuth: vi.fn().mockResolvedValue(undefined) };
-    const result = await findTool(authTools, "refresh_auth").execute(
+    const result = await findTool(authTools, "auth_refresh").execute(
       client,
       {},
       noopOpts(),
@@ -519,9 +519,9 @@ describe("authTools", () => {
     expect(result.message).toContain("refreshed");
   });
 
-  it("save_auth_tokens parses cookie string and emits _client_action=reset", async () => {
+  it("auth_save_tokens parses cookie string and emits _client_action=reset", async () => {
     const client = {};
-    const result = await findTool(authTools, "save_auth_tokens").execute(
+    const result = await findTool(authTools, "auth_save_tokens").execute(
       client,
       {
         cookies: "SID=a; HSID=b; EXTRA=x",
@@ -538,8 +538,8 @@ describe("authTools", () => {
     expect(result._client_action).toBe("reset");
   });
 
-  it("save_auth_tokens accepts empty cookie string", async () => {
-    const result = await findTool(authTools, "save_auth_tokens").execute(
+  it("auth_save_tokens accepts empty cookie string", async () => {
+    const result = await findTool(authTools, "auth_save_tokens").execute(
       {},
       {},
       noopOpts(),
@@ -550,8 +550,8 @@ describe("authTools", () => {
     expect(result._client_action).toBe("reset");
   });
 
-  it("save_auth_tokens skips cookie segments with no '=' separator", async () => {
-    await findTool(authTools, "save_auth_tokens").execute(
+  it("auth_save_tokens skips cookie segments with no '=' separator", async () => {
+    await findTool(authTools, "auth_save_tokens").execute(
       {},
       { cookies: "SID=a; ORPHAN; HSID=b" },
       noopOpts(),

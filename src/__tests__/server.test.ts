@@ -131,9 +131,9 @@ describe("createServer", () => {
     const { createServer } = await freshServerModule();
     createServer();
 
-    // save_auth_tokens is the reset-triggering tool; find its handler.
+    // auth_save_tokens is the reset-triggering tool; find its handler.
     const saveCall = registerToolSpy.mock.calls.find(
-      (c) => c[0] === "save_auth_tokens",
+      (c) => c[0] === "auth_save_tokens",
     )!;
     const saveHandler = saveCall[2];
 

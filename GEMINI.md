@@ -76,7 +76,7 @@ The server uses cookie-based authentication.
    - Tool results should be returned as `ToolResult` to maintain MCP compliance.
    - To request a client re-init after auth changes, return `clientResetSignal({...})` from a tool — do not write the legacy `_client_action: "reset"` string by hand.
 4. **RPC Integration**: New NotebookLM features require identifying the corresponding `rpcId` in `src/constants.ts`, calling it via `this.transport.callBatchexecute(...)` from a method on `NotebookLMClient`, and exposing a tool wrapper in `src/tools/`.
-5. **Filesystem boundaries**: any tool that reads a user-provided path MUST validate the path against `resolveAllowedReadPath` (currently used by `notebook_add_text`). The allowed roots are `process.cwd()` and `os.tmpdir()`.
+5. **Filesystem boundaries**: any tool that reads a user-provided path MUST validate the path against `resolveAllowedReadPath` (currently used by `source_add_text`). The allowed roots are `process.cwd()` and `os.tmpdir()`.
 
 ### Technical Integrity
 - **Statelessness**: The MCP server itself should remain largely stateless, delegating state management to the NotebookLM backend and the local `auth.json` cache.

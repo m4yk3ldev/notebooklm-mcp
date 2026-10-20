@@ -6,7 +6,7 @@ import type { AuthTokens } from "../types.js";
 // We use a special return flag so server.ts knows to reset the client
 export const authTools: McpTool<any>[] = [
   {
-    name: "refresh_auth",
+    name: "auth_refresh",
     title: "Refresh NotebookLM session",
     description:
       "Re-read the NotebookLM page with the saved cookies to refresh the CSRF token and session ID. Returns a " +
@@ -20,7 +20,7 @@ export const authTools: McpTool<any>[] = [
     },
   },
   {
-    name: "save_auth_tokens",
+    name: "auth_save_tokens",
     title: "Save NotebookLM cookies",
     description:
       "Manual fallback: save NotebookLM cookies the user pasted, plus an optional CSRF token and session ID, to " +

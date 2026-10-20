@@ -58,13 +58,26 @@ describe("tool catalog metadata", () => {
   it("marks list/get/status style lookups read-only", () => {
     const readOnly = tools.filter((t) => t.annotations!.readOnlyHint).map((t) => t.name).sort();
     expect(readOnly).toEqual([
-      "notebook_describe",
       "notebook_get",
       "notebook_list",
+      "notebook_summarize",
       "research_status",
-      "source_describe",
+      "source_get",
       "source_get_content",
       "studio_status",
     ]);
+  });
+
+  it("names every tool resource_action, with get for data and no describe", () => {
+    // One predictable scheme (Glama marked verb-first names and get/describe mixing down).
+    const resources = [
+      "notebook", "source", "research", "studio", "auth",
+      "audio_overview", "video_overview", "infographic", "slide_deck", "report", "flashcards", "quiz",
+    ];
+    const scheme = new RegExp(`^(${resources.join("|")})_[a-z]+(_[a-z]+)*$`);
+    for (const t of tools) {
+      expect(t.name, t.name).toMatch(scheme);
+      expect(t.name, t.name).not.toMatch(/describe/);
+    }
   });
 });

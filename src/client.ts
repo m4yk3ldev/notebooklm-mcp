@@ -343,7 +343,7 @@ export class NotebookLMClient {
       if (e instanceof RpcError && e.codes.includes(9)) {
         throw new Error(
           `NotebookLM could not fetch ${url}. It may be private, blocked or temporarily unreachable. Check notebook_get: ` +
-            "if the source is listed anyway, keep it or delete it; otherwise retry, or add the text with notebook_add_text.",
+            "if the source is listed anyway, keep it or delete it; otherwise retry, or add the text with source_add_text.",
         );
       }
       throw e;
