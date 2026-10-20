@@ -686,7 +686,7 @@ Once wired up, your AI can drive NotebookLM end-to-end with natural language. Th
 
 ## 🛠 Complete Tool Reference (27)
 
-Every tool is designed to work seamlessly within your AI's context window.
+Every tool carries a title, a description of what it returns, and MCP annotations (read-only, destructive, idempotent), so clients can tell safe lookups from changes. The server also sends usage instructions at initialization.
 
 ### 📔 Notebook Management
 
@@ -703,10 +703,10 @@ Every tool is designed to work seamlessly within your AI's context window.
 
 | Tool                 | Description                                                                            |
 | :------------------- | :------------------------------------------------------------------------------------- |
-| `notebook_add_url`   | Add any website or YouTube video as a source. Transcripts are automatically handled.   |
-| `notebook_add_text`  | Ingest raw text snippets or local file contents directly into your project.            |
-| `notebook_add_drive` | Connect and import documents, sheets, or slides from your Google Drive.                |
-| `source_describe`    | Get detailed AI analysis, summaries, and key topics for any individual source.         |
+| `notebook_add_url`   | Add any public website or YouTube video as a source. Returns the new source's ID.      |
+| `notebook_add_text`  | Ingest raw text snippets or local file contents. Returns the new source's ID.          |
+| `notebook_add_drive` | Import a Google Drive file by its file ID. Returns the new source's ID.                |
+| `source_describe`    | Get a source's title, type and extracted-text length (the text itself: next tool).     |
 | `source_get_content` | Extract the full underlying text of a source for processing by other AI tools.         |
 | `source_sync_drive`  | Sync selected Google Drive sources to pull the latest changes into NotebookLM.         |
 | `source_delete`      | Remove a specific source from your notebook.                                           |

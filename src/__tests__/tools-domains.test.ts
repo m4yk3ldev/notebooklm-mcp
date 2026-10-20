@@ -111,6 +111,17 @@ describe("sourceTools", () => {
     expect(result.source.id).toBe("s1");
   });
 
+  it("source_describe leaves the full text to source_get_content", async () => {
+    // getSource never fills summary/keywords (the source-guide RPC is not wired), so they are not echoed.
+    const client = { getSource: vi.fn().mockResolvedValue({ id: "s1", title: "T", type: "pdf", content: "x".repeat(5000), summary: null, keywords: [] }) };
+    const result = await findTool(sourceTools, "source_describe").execute(
+      client,
+      { notebook_id: "n1", source_id: "s1" },
+      noopOpts(),
+    );
+    expect(result.source).toEqual({ id: "s1", title: "T", type: "pdf", content_length: 5000 });
+  });
+
   it("source_get_content returns text from source", async () => {
     const client = { getSource: vi.fn().mockResolvedValue({ id: "s1", content: "body" }) };
     const result = await findTool(sourceTools, "source_get_content").execute(
@@ -121,14 +132,16 @@ describe("sourceTools", () => {
     expect(result.text).toBe("body");
   });
 
-  it("notebook_add_url calls addUrlSource", async () => {
-    const client = { addUrlSource: vi.fn().mockResolvedValue(undefined) };
+  it("notebook_add_url returns the created source", async () => {
+    const created = { id: "s9", title: "X", type: "web_page" };
+    const client = { addUrlSource: vi.fn().mockResolvedValue(created) };
     const result = await findTool(sourceTools, "notebook_add_url").execute(
       client,
       { notebook_id: "n1", url: "https://x" },
       noopOpts(),
     );
     expect(client.addUrlSource).toHaveBeenCalledWith("n1", "https://x");
+    expect(result.source).toEqual(created);
     expect(result.message).toBe("URL source added");
   });
 
@@ -141,14 +154,16 @@ describe("sourceTools", () => {
       rmSync(tempDir, { recursive: true, force: true });
     });
 
-    it("uses inline content when provided", async () => {
-      const client = { addTextSource: vi.fn().mockResolvedValue(undefined) };
-      await findTool(sourceTools, "notebook_add_text").execute(
+    it("uses inline content when provided and returns the created source", async () => {
+      const created = { id: "s8", title: "T", type: "pasted_text" };
+      const client = { addTextSource: vi.fn().mockResolvedValue(created) };
+      const result = await findTool(sourceTools, "notebook_add_text").execute(
         client,
         { notebook_id: "n1", content: "hello", title: "T" },
         noopOpts(),
       );
       expect(client.addTextSource).toHaveBeenCalledWith("n1", "hello", "T");
+      expect(result.source).toEqual(created);
     });
 
     it("reads content from file_path when content omitted", async () => {
@@ -217,9 +232,10 @@ describe("sourceTools", () => {
     });
   });
 
-  it("notebook_add_drive calls addDriveSource with all args", async () => {
-    const client = { addDriveSource: vi.fn().mockResolvedValue(undefined) };
-    await findTool(sourceTools, "notebook_add_drive").execute(
+  it("notebook_add_drive calls addDriveSource with all args and returns the source", async () => {
+    const created = { id: "s7", title: "T", type: "google_doc" };
+    const client = { addDriveSource: vi.fn().mockResolvedValue(created) };
+    const driveResult = await findTool(sourceTools, "notebook_add_drive").execute(
       client,
       {
         notebook_id: "n1",
@@ -235,6 +251,7 @@ describe("sourceTools", () => {
       "T",
       "application/vnd.google-apps.document",
     );
+    expect(driveResult.source).toEqual(created);
   });
 
   it("source_sync_drive gates on confirm", async () => {

@@ -323,17 +323,31 @@ export class NotebookLMClient {
       ? [null, null, null, null, null, null, null, [url], null, null, 1]
       : [null, null, [url], null, null, null, null, null, null, null, 1];
 
-    const result = await this.execute(
-      RPC_IDS.ADD_SOURCE,
-      [
-        [sourceData],
-        notebookId,
-        [2],
-        [1, null, null, null, null, null, null, null, null, null, [1]],
-      ],
-      `/notebook/${notebookId}`,
-      EXTENDED_TIMEOUT,
-    );
+    // Like research import, NotebookLM fetches the page server-side and
+    // answers code 9 when it can't; the source may still be listed (seen live
+    // 2026-10-19), so point the caller at notebook_get rather than a blind retry.
+    let result: unknown;
+    try {
+      result = await this.execute(
+        RPC_IDS.ADD_SOURCE,
+        [
+          [sourceData],
+          notebookId,
+          [2],
+          [1, null, null, null, null, null, null, null, null, null, [1]],
+        ],
+        `/notebook/${notebookId}`,
+        EXTENDED_TIMEOUT,
+      );
+    } catch (e) {
+      if (e instanceof RpcError && e.codes.includes(9)) {
+        throw new Error(
+          `NotebookLM could not fetch ${url}. It may be private, blocked or temporarily unreachable. Check notebook_get: ` +
+            "if the source is listed anyway, keep it or delete it; otherwise retry, or add the text with notebook_add_text.",
+        );
+      }
+      throw e;
+    }
 
     const data = result as any[];
     const source = data?.[0]?.[0];

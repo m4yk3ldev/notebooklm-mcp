@@ -51,7 +51,8 @@ The authentication step needs the user at a browser. Ask them to run it; do not 
    - `notebook_add_url` — web pages and YouTube links.
    - `notebook_add_text` — pass `content` inline, or `file_path` for a local file. `file_path` must sit under the server's working directory or the OS temp dir; for anything else, read the file and pass `content`.
    - `notebook_add_drive` — needs the Drive `file_id`, a `title` and the MIME `doc_type` (e.g. `application/vnd.google-apps.document`).
-   - Sources take a moment to process. Check with `notebook_get` before querying a source you just added.
+   - Each of these returns the new source's `id`. Sources take a moment to process; check with `notebook_get` before querying one you just added.
+   - If `notebook_add_url` says NotebookLM could not fetch the page, check `notebook_get` before retrying: the source is sometimes listed anyway.
 3. **Ask questions.** `notebook_query` answers only from the notebook's sources, using all of them by default. Restrict with `source_ids` when the user cares about specific documents. For follow-ups, pass back the returned `conversation_id` so NotebookLM keeps context.
 4. **Produce output** with the Studio tools (below), or summarise with `notebook_describe`.
 

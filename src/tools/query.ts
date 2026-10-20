@@ -1,15 +1,27 @@
 import { z } from "zod";
-import { McpTool, resolveSourceIds } from "./index.js";
+import { McpTool, resolveSourceIds, PARAM } from "./index.js";
 
 export const queryTools: McpTool<any>[] = [
   {
     name: "notebook_query",
-    description: "Ask a question about the sources in a notebook",
+    title: "Ask the notebook",
+    description:
+      "Ask NotebookLM a question that it answers only from the notebook's sources (all of them, or source_ids). " +
+      "Returns the answer, with numbered citations to the source passages it used, and a conversation_id: pass it back " +
+      "to ask follow-up questions in the same conversation. Answers on large notebooks can take a minute.",
+    // Not read-only: NotebookLM keeps the exchange in the notebook's chat history.
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     schema: {
-      notebook_id: z.string().describe("The notebook ID"),
-      query: z.string().describe("Question to ask"),
-      source_ids: z.array(z.string()).optional().describe("Specific source IDs to query (omit for all)"),
-      conversation_id: z.string().optional().describe("Conversation ID for follow-up questions"),
+      notebook_id: z.string().describe(PARAM.notebookId),
+      query: z.string().describe("The question, in natural language"),
+      source_ids: z
+        .array(z.string())
+        .optional()
+        .describe("Answer only from these source IDs (from notebook_get); omit to use every source"),
+      conversation_id: z
+        .string()
+        .optional()
+        .describe("conversation_id returned by a previous notebook_query, to ask a follow-up in the same conversation"),
     },
     execute: async (client, { notebook_id, query, source_ids, conversation_id }) => {
       // With no ids the server falls back to whatever is ticked in the web

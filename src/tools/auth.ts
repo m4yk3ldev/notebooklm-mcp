@@ -7,7 +7,13 @@ import type { AuthTokens } from "../types.js";
 export const authTools: McpTool<any>[] = [
   {
     name: "refresh_auth",
-    description: "Reload authentication tokens (re-extract CSRF and session from page)",
+    title: "Refresh NotebookLM session",
+    description:
+      "Re-read the NotebookLM page with the saved cookies to refresh the CSRF token and session ID. Returns a " +
+      "confirmation, or an authentication error if the Google session is signed out; then ask the user to run " +
+      "`npx -y @m4ykeldev/notebooklm-mcp auth` in a terminal. Call it once after an auth error, then retry.",
+    // Rewrites the local token cache; never touches notebooks.
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     execute: async (client) => {
       await client.refreshAuth();
       return { message: "Authentication tokens refreshed" };
@@ -15,11 +21,17 @@ export const authTools: McpTool<any>[] = [
   },
   {
     name: "save_auth_tokens",
-    description: "Manually save authentication cookies (fallback method — prefer using CLI auth)",
+    title: "Save NotebookLM cookies",
+    description:
+      "Manual fallback: save NotebookLM cookies the user pasted, plus an optional CSRF token and session ID, to " +
+      "~/.notebooklm-mcp/auth.json, replacing what is stored there. Returns a confirmation; the next call uses the new " +
+      "tokens. Prefer the CLI auth command. Use this only when the user hands you cookies, and never echo them back.",
+    // Overwrites the stored credentials; local only.
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     schema: {
-      cookies: z.string().optional().describe("Cookie header string (SID=xxx; HSID=yyy; ...)"),
-      csrf_token: z.string().optional().describe("CSRF token"),
-      session_id: z.string().optional().describe("Session ID"),
+      cookies: z.string().optional().describe("Cookie header string as copied from the browser: \"SID=...; HSID=...; ...\""),
+      csrf_token: z.string().optional().describe("CSRF token (SNlM0e); optional, extracted from the page when omitted"),
+      session_id: z.string().optional().describe("Session ID (FdrFJe); optional, extracted from the page when omitted"),
     },
     execute: async (client, { cookies: cookieStr, csrf_token, session_id }) => {
       const cookieMap: Record<string, string> = {};

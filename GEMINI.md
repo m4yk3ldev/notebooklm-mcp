@@ -69,7 +69,7 @@ The server uses cookie-based authentication.
 ## Engineering Standards & Conventions
 
 ### Development Workflow
-1. **Tool Addition**: Define new tools in `src/tools/` using the `McpServer.tool()` pattern or the project's internal `registerTools` abstraction. Use `resolveSourceIds(client, notebookId, sourceIds)` instead of inlining the "all sources of the notebook" expansion.
+1. **Tool Addition**: Define new tools in `src/tools/` with the project's `registerTools` abstraction. Give each a `title`, MCP `annotations` (`READ_ONLY` / `CREATES` / `UPDATES` / `DESTROYS` from `src/tools/index.ts`) and a description that says what it returns; `src/__tests__/tools-metadata.test.ts` enforces this. Use `resolveSourceIds(client, notebookId, sourceIds)` instead of inlining the "all sources of the notebook" expansion.
 2. **Schema Validation**: Every tool input MUST be validated using `zod`.
 3. **Error Handling**:
    - Use `AuthenticationError` for session expirations (still exported from `src/client.ts`).

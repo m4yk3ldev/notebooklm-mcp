@@ -280,6 +280,13 @@ describe("source RPCs", () => {
     expect(s.type).toBe("web_page");
   });
 
+  it("addUrlSource explains error 9: NotebookLM could not fetch the page", async () => {
+    mockBatchexecute({}, { errors: { [RPC_IDS.ADD_SOURCE]: [9] } });
+    const err = await new NotebookLMClient(tokens).addUrlSource("n1", "https://example.com/x").catch((e) => e);
+    expect(String(err)).toMatch(/could not fetch https:\/\/example\.com\/x/);
+    expect(String(err)).toMatch(/notebook_get/);
+  });
+
   it("addTextSource returns pasted_text", async () => {
     mockBatchexecute({ [RPC_IDS.ADD_SOURCE]: [[["t", "T"]]] });
     const s = await new NotebookLMClient(tokens).addTextSource("n1", "body", "T");
