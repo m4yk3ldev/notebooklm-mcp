@@ -5,18 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.1] - 2026-10-20
 
 ### Changed
-- `notebook_rename` no longer mentions notebook notes, which no tool manages.
+- `notebook_rename` no longer mentions notebook notes, which no tool manages (#13).
 
 ### Added
-- `glama.json` names the maintainer for the Glama directory listing.
+- `glama.json` names the maintainer for the Glama directory listing (#13).
+
+### Documentation
+- README and the agent skill describe the output schemas, the `notebook_list`
+  limit, and finding a Studio artifact by `artifact_id` in `studio_status` (#12).
 
 ### Security
 - vite 8.0.16 → 8.3.4 through a `pnpm-workspace.yaml` override (GHSA-587h-7wmj-h5pm,
   GHSA-698v-4r3x-3vcv, GHSA-r825-w8mm-5pxw). vite is a dev-only dependency of
-  vitest and is not part of the published package.
+  vitest and is not part of the published package (#13).
 
 ## [0.5.0] - 2026-10-20
 
