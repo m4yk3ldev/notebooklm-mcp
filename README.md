@@ -704,7 +704,7 @@ Every tool carries a title, a description of what it returns, and MCP annotation
 | `notebook_list`     | Get an overview of all your notebooks, including titles, source counts, and ownership metadata. |
 | `notebook_create`   | Create a new NotebookLM project instantly from your terminal or AI assistant.                   |
 | `notebook_get`      | Retrieve deep metadata and a full list of sources for a specific notebook.                      |
-| `notebook_summarize` | Get a high-level, AI-generated summary of everything inside a notebook.                         |
+| `notebook_summarize` | Get an AI-generated summary of the notebook plus the questions NotebookLM suggests asking.      |
 | `notebook_rename`   | Update the title of an existing notebook.                                                       |
 | `notebook_delete`   | Permanently remove a notebook (requires explicit confirmation).                                 |
 
@@ -727,7 +727,7 @@ Every tool carries a title, a description of what it returns, and MCP annotation
 | `research_start`  | Launch an autonomous research task using Google's engine (Web or Drive sources).      |
 | `research_status` | Track the progress of active research tasks and view discovered insights.             |
 | `research_import` | Instantly import the findings of a research task as new sources in your notebook.     |
-| `notebook_query`  | Ask complex, grounded questions. Answers are cited directly from your sources.        |
+| `notebook_query`  | Ask questions answered only from your sources, with follow-ups in the same conversation. |
 
 ### 🎬 Studio (AI Content Generation)
 

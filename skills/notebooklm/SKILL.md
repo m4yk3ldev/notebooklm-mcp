@@ -1,6 +1,6 @@
 ---
 name: notebooklm
-description: Drive Google NotebookLM from the agent through the notebooklm-mcp server — create and manage notebooks, add sources (URLs, text, local files, Google Drive), ask grounded questions with citations, run web/Drive research, and generate Studio content (audio overviews, video overviews, slide decks, reports, infographics, flashcards, quizzes). Use when the user mentions NotebookLM, a notebook of sources, "ask my sources", source-grounded answers, a podcast/audio overview, study guides, flashcards or quizzes from documents, or wants research collected into a notebook.
+description: Drive Google NotebookLM from the agent through the notebooklm-mcp server — create and manage notebooks, add sources (URLs, text, local files, Google Drive), ask questions answered only from those sources, run web/Drive research, and generate Studio content (audio overviews, video overviews, slide decks, reports, infographics, flashcards, quizzes). Use when the user mentions NotebookLM, a notebook of sources, "ask my sources", source-grounded answers, a podcast/audio overview, study guides, flashcards or quizzes from documents, or wants research collected into a notebook.
 ---
 
 # NotebookLM via MCP
@@ -53,7 +53,7 @@ The authentication step needs the user at a browser. Ask them to run it; do not 
    - `source_add_drive` — needs the Drive `file_id`, a `title` and the MIME `doc_type` (e.g. `application/vnd.google-apps.document`).
    - Each of these returns the new source's `id`. Sources take a moment to process; check with `notebook_get` before querying one you just added.
    - If `source_add_url` says NotebookLM could not fetch the page, check `notebook_get` before retrying: the source is sometimes listed anyway.
-3. **Ask questions.** `notebook_query` answers only from the notebook's sources, using all of them by default. Restrict with `source_ids` when the user cares about specific documents. For follow-ups, pass back the returned `conversation_id` so NotebookLM keeps context.
+3. **Ask questions.** `notebook_query` answers only from the notebook's sources, using all of them by default. Restrict with `source_ids` when the user cares about specific documents. For follow-ups, pass back the returned `conversation_id` so the follow-up keeps context (the server remembers the conversation while it keeps running).
 4. **Produce output** with the Studio tools (below), or summarise with `notebook_summarize`.
 
 Prefer `notebook_query` over reading raw sources. Use `source_get_content` only when the user needs the verbatim text of a source.

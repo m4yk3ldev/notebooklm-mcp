@@ -31,7 +31,7 @@ export interface SourceDetail extends SourceSummary {
 
 export interface ResearchResult {
   task_id: string;
-  status: "in_progress" | "completed" | "imported" | "import_failed";
+  status: "in_progress" | "completed" | "imported" | "import_failed" | "unknown";
   query: string;
   sources: ResearchSource[];
   summary: string | null;

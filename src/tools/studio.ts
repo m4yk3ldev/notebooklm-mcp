@@ -107,7 +107,7 @@ export const studioTools: McpTool<any>[] = [
       format: z
         .string()
         .optional()
-        .describe(`Format: ${SLIDE_DECK_FORMATS.optionsStr()}. detailed_deck reads on its own; presenter_slides need a speaker`),
+        .describe(`Format: ${SLIDE_DECK_FORMATS.optionsStr()}`),
       length: z.string().optional().describe(`Length: ${SLIDE_DECK_LENGTHS.optionsStr()}`),
       language: z.string().optional().describe(PARAM.language),
       focus_prompt: z.string().optional().describe(PARAM.focusPrompt),

@@ -138,7 +138,7 @@ describe("createServer", () => {
     const saveHandler = saveCall[2];
 
     // First invocation instantiates client #1, then resets.
-    await saveHandler({});
+    await saveHandler({ cookies: "SID=a; HSID=b; SSID=c; APISID=d; SAPISID=e" });
     expect(clientInstances).toHaveLength(1);
 
     // Next tool call should build a fresh client because reset nulled the cached one.

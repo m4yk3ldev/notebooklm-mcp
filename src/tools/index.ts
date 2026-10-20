@@ -30,7 +30,7 @@ export const PARAM = {
   notebookId: "Notebook ID, as returned by notebook_list or notebook_create",
   sourceId: "Source ID, as listed in the notebook's sources by notebook_get",
   studioSourceIds: "Limit generation to these source IDs (from notebook_get); omit to use every source in the notebook",
-  language: "BCP-47 language code such as en, es or fr; omit to use the language of the user's NotebookLM account",
+  language: "BCP-47 language code such as en, es or fr; omit for NotebookLM's default",
   focusPrompt: "Optional instruction on what to focus on or emphasise, e.g. \"the methodology section\"",
   confirmStudio: "Must be true to start generation. With false the tool only returns pending_confirmation and does nothing",
 } as const;

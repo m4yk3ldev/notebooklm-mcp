@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { McpTool, clientResetSignal } from "./index.js";
 import { saveTokens } from "../auth.js";
+import { REQUIRED_COOKIES } from "../constants.js";
 import type { AuthTokens } from "../types.js";
 
 // We use a special return flag so server.ts knows to reset the client
@@ -29,7 +30,10 @@ export const authTools: McpTool<any>[] = [
     // Overwrites the stored credentials; local only.
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     schema: {
-      cookies: z.string().optional().describe("Cookie header string as copied from the browser: \"SID=...; HSID=...; ...\""),
+      cookies: z
+        .string()
+        .optional()
+        .describe(`Cookie header string as copied from the browser ("SID=...; HSID=...; ..."); must include ${REQUIRED_COOKIES.join(", ")}`),
       csrf_token: z.string().optional().describe("CSRF token (SNlM0e); optional, extracted from the page when omitted"),
       session_id: z.string().optional().describe("Session ID (FdrFJe); optional, extracted from the page when omitted"),
     },
@@ -42,6 +46,14 @@ export const authTools: McpTool<any>[] = [
             cookieMap[part.substring(0, eq).trim()] = part.substring(eq + 1).trim();
           }
         }
+      }
+      // Saving overwrites the stored session, so an incomplete set would sign the user out.
+      const missing = REQUIRED_COOKIES.filter((name) => !cookieMap[name]);
+      if (missing.length > 0) {
+        throw new Error(
+          `Not saved: the cookies must include ${REQUIRED_COOKIES.join(", ")} (missing ${missing.join(", ")}). ` +
+            "The stored session was left unchanged.",
+        );
       }
       const tokens: AuthTokens = {
         cookies: cookieMap,

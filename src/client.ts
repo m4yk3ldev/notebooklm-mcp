@@ -63,6 +63,17 @@ export class RpcError extends Error {
   }
 }
 
+// Type of a Drive source, from the MIME type the caller passed (the
+// response row for Drive adds has not been recorded live).
+function driveSourceType(mimeType: string): string {
+  if (mimeType === "application/vnd.google-apps.document") return "google_docs";
+  if (mimeType === "application/vnd.google-apps.presentation" || mimeType === "application/vnd.google-apps.spreadsheet") {
+    return "google_slides_sheets";
+  }
+  if (mimeType === "application/pdf") return "pdf";
+  return "unknown";
+}
+
 export class NotebookLMClient {
   private auth: AuthState;
   private transport: RpcTransport;
@@ -299,14 +310,20 @@ export class NotebookLMClient {
     );
   }
 
-  async describeNotebook(notebookId: string): Promise<string> {
+  async describeNotebook(notebookId: string): Promise<{ summary: string; suggested_questions: string[] }> {
     const result = await this.execute(
       RPC_IDS.GET_SUMMARY,
       [notebookId, null, [2]],
       `/notebook/${notebookId}`,
     );
-    const data = result as any[];
-    return data?.[0] || "";
+    // Recorded 2026-10: [[[summary], [[[question, prompt], ...]], null, null, null, [[question, n], ...]], token]
+    const guide = Array.isArray(result) && Array.isArray(result[0]) ? (result[0] as any[]) : [];
+    const summary = Array.isArray(guide[0]) && typeof guide[0][0] === "string" ? guide[0][0] : "";
+    const pairs = Array.isArray(guide[1]?.[0]) ? (guide[1][0] as unknown[]) : [];
+    const suggested_questions = pairs
+      .map((p) => (Array.isArray(p) && typeof p[0] === "string" ? p[0] : null))
+      .filter((q): q is string => q !== null);
+    return { summary, suggested_questions };
   }
 
   // ─── Source Methods ──────────────────────────────────
@@ -315,9 +332,14 @@ export class NotebookLMClient {
     notebookId: string,
     url: string,
   ): Promise<SourceSummary> {
-    const isYouTube =
-      url.toLowerCase().includes("youtube.com") ||
-      url.toLowerCase().includes("youtu.be");
+    // By hostname: a substring test typed https://example.com/?r=youtube.com as YouTube.
+    let host = "";
+    try {
+      host = new URL(url).hostname.toLowerCase();
+    } catch {
+      // not a URL; NotebookLM will reject it below
+    }
+    const isYouTube = host === "youtu.be" || host === "youtube.com" || host.endsWith(".youtube.com");
 
     const sourceData = isYouTube
       ? [null, null, null, null, null, null, null, [url], null, null, 1]
@@ -435,7 +457,7 @@ export class NotebookLMClient {
     return {
       id: Array.isArray(source?.[0]) ? source[0][0] : String(source?.[0] || ""),
       title: source?.[1] || title,
-      type: "google_docs",
+      type: driveSourceType(mimeType),
     };
   }
 
@@ -719,7 +741,8 @@ export class NotebookLMClient {
 
       results.push({
         task_id: tid,
-        status: statusMap[statusCode] || "in_progress",
+        // An unmapped code is reported as such: callers poll while "in_progress".
+      status: statusMap[statusCode] ?? (statusCode == null ? "in_progress" : "unknown"),
         query: taskInfo?.[1]?.[0] || "",
         sources,
         summary: taskInfo?.[3]?.[1] || null,
@@ -1000,7 +1023,10 @@ export class NotebookLMClient {
     } = {},
   ): Promise<string> {
     const formatName = options.report_format || "Briefing Doc";
-    const fmt = REPORT_FORMATS[formatName] || REPORT_FORMATS["Briefing Doc"];
+    const fmt = REPORT_FORMATS[formatName];
+    if (!fmt) {
+      throw new Error(`Invalid report_format "${formatName}". Options: ${Object.keys(REPORT_FORMATS).join(", ")}`);
+    }
     const prompt =
       formatName === "Create Your Own"
         ? options.custom_prompt || ""

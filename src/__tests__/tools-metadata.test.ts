@@ -5,6 +5,7 @@ import { studioTools } from "../tools/studio.js";
 import { authTools } from "../tools/auth.js";
 import { queryTools } from "../tools/query.js";
 import { researchTools } from "../tools/research.js";
+import { SERVER_INSTRUCTIONS } from "../server.js";
 
 /**
  * The tool catalog is what the model reads to pick a tool, and what
@@ -12,6 +13,10 @@ import { researchTools } from "../tools/research.js";
  * scored C there; these rules keep every tool at the level that scored A.
  */
 const tools = [...notebookTools, ...sourceTools, ...studioTools, ...authTools, ...queryTools, ...researchTools];
+const RESOURCES = [
+  "notebook", "source", "research", "studio", "auth",
+  "audio_overview", "video_overview", "infographic", "slide_deck", "report", "flashcards", "quiz",
+];
 
 describe("tool catalog metadata", () => {
   it("has 27 uniquely named tools", () => {
@@ -68,13 +73,18 @@ describe("tool catalog metadata", () => {
     ]);
   });
 
+  it("server instructions only name tools that exist", () => {
+    const names = new Set(tools.map((t) => t.name));
+    // Tool-shaped words only; field names such as conversation_id are fine.
+    const toolWord = new RegExp(`\\b(?:${RESOURCES.join("|")})_[a-z]+(?:_[a-z]+)*\\b`, "g");
+    const mentioned = SERVER_INSTRUCTIONS.match(toolWord) ?? [];
+    expect(mentioned.length).toBeGreaterThan(5);
+    for (const m of mentioned) expect(names.has(m), m).toBe(true);
+  });
+
   it("names every tool resource_action, with get for data and no describe", () => {
     // One predictable scheme (Glama marked verb-first names and get/describe mixing down).
-    const resources = [
-      "notebook", "source", "research", "studio", "auth",
-      "audio_overview", "video_overview", "infographic", "slide_deck", "report", "flashcards", "quiz",
-    ];
-    const scheme = new RegExp(`^(${resources.join("|")})_[a-z]+(_[a-z]+)*$`);
+    const scheme = new RegExp(`^(${RESOURCES.join("|")})_[a-z]+(_[a-z]+)*$`);
     for (const t of tools) {
       expect(t.name, t.name).toMatch(scheme);
       expect(t.name, t.name).not.toMatch(/describe/);

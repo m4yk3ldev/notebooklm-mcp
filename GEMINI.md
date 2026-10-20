@@ -81,7 +81,7 @@ The server uses cookie-based authentication.
 ### Technical Integrity
 - **Statelessness**: The MCP server itself should remain largely stateless, delegating state management to the NotebookLM backend and the local `auth.json` cache.
 - **Timeouts**: Use `EXTENDED_TIMEOUT` (defined in `constants.ts`) for long-running operations like studio artifact generation or deep research.
-- **Citations**: When implementing query tools, ensure that citations and source references are preserved and accurately mapped.
+- **Citations**: `notebook_query` returns the answer text with NotebookLM's bracketed citation numbers, but not the passage each number maps to. Do not describe it as returning citations until that mapping is parsed from the wire.
 
 ## File Map (Key Files)
 - `src/client.ts`: Domain facade — `NotebookLMClient`. Composes the `rpc/*` collaborators; one public method per Google capability.

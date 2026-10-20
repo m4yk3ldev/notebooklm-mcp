@@ -8,7 +8,7 @@ export const researchTools: McpTool<any>[] = [
     title: "Start research",
     description:
       "Start a NotebookLM research task that searches the web, or the user's Google Drive, for sources on a topic. " +
-      "Fast mode takes about a minute; deep mode is more thorough and can take several minutes. Returns a task_id: poll " +
+      "Deep mode is more thorough and slower than the default fast mode. Returns a task_id: poll " +
       "research_status with it, then import the results you want with research_import.",
     annotations: CREATES,
     schema: {
@@ -27,7 +27,8 @@ export const researchTools: McpTool<any>[] = [
     title: "Check research",
     description:
       "Check research tasks in a notebook: one task, or all of them. Returns each task's status (in_progress, completed, " +
-      "imported or import_failed), query, summary and found sources (url, title, description, type). Poll until the " +
+      "imported, import_failed, or unknown for a state this server doesn't recognise), query, summary and found sources " +
+      "(url, title, description, type). Poll until the " +
       "status is no longer in_progress; a source's position in this list is the index research_import takes.",
     annotations: READ_ONLY,
     schema: {
@@ -46,7 +47,7 @@ export const researchTools: McpTool<any>[] = [
       "Add results of a finished research task to the notebook as sources. Only web results can be imported: without " +
       "source_indices it imports every web result and skips Drive ones. NotebookLM fetches each URL and skips any it " +
       "can't reach, so it returns \"Imported X of Y research sources\". If none could be fetched the call fails and the " +
-      "task shows import_failed; retrying usually works.",
+      "task shows import_failed; a retry may succeed.",
     annotations: CREATES,
     schema: {
       notebook_id: z.string().describe(PARAM.notebookId),

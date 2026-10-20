@@ -14,7 +14,7 @@ import { readPackageVersion } from "./version.js";
 
 // Sent to clients at initialization; they place it ahead of the tool
 // catalog, so it carries the cross-tool workflow the descriptions can't.
-export const SERVER_INSTRUCTIONS = `Google NotebookLM: notebooks of sources (web pages, YouTube, text, Drive files) that answer questions only from those sources, with citations, and generate Studio content.
+export const SERVER_INSTRUCTIONS = `Google NotebookLM: notebooks of sources (web pages, YouTube, text, Drive files) that answer questions only from those sources and generate Studio content.
 
 Workflow: find the notebook with notebook_list (match by title before creating a duplicate) or create one with notebook_create. Add sources with source_add_url, source_add_text or source_add_drive; each returns the new source's id. Ask questions with notebook_query and pass the returned conversation_id back for follow-ups. To let NotebookLM find sources, use research_start, poll research_status until it is no longer "in_progress", then research_import.
 

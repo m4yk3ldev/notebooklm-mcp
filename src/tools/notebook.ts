@@ -54,23 +54,23 @@ export const notebookTools: McpTool<any>[] = [
     title: "Summarise notebook",
     description:
       "Ask NotebookLM for an AI-generated overview of the whole notebook. Returns a short summary of what its sources " +
-      "cover. Use it to get oriented in an unfamiliar notebook; ask specific questions with notebook_query and list the " +
-      "sources with notebook_get.",
+      "cover and the questions NotebookLM suggests asking about them. Use it to get oriented in an unfamiliar notebook; " +
+      "ask specific questions with notebook_query and list the sources with notebook_get.",
     annotations: READ_ONLY,
     schema: {
       notebook_id: z.string().describe(PARAM.notebookId),
     },
     execute: async (client, { notebook_id }) => {
-      const summary = await client.describeNotebook(notebook_id);
-      return { summary };
+      const { summary, suggested_questions } = await client.describeNotebook(notebook_id);
+      return { summary, suggested_questions };
     },
   },
   {
     name: "notebook_rename",
     title: "Rename notebook",
     description:
-      "Change a notebook's title. Returns a confirmation message with the new title. Only the title changes: sources, " +
-      "chat history and Studio content are left as they are.",
+      "Change a notebook's title. Returns a confirmation message with the new title. Use notebook_list or notebook_get " +
+      "to find the notebook_id first.",
     annotations: UPDATES,
     schema: {
       notebook_id: z.string().describe(PARAM.notebookId),
@@ -85,7 +85,7 @@ export const notebookTools: McpTool<any>[] = [
     name: "notebook_delete",
     title: "Delete notebook",
     description:
-      "Permanently delete a notebook together with its sources, chat history and Studio content. With confirm=false it " +
+      "Permanently delete a notebook and everything in it. With confirm=false it " +
       "does nothing and returns pending_confirmation; with confirm=true it deletes and returns a confirmation message. " +
       "This cannot be undone: name the notebook to the user and get explicit approval first.",
     annotations: DESTROYS,

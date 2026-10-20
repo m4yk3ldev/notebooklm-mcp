@@ -137,12 +137,21 @@ describe("notebook RPCs", () => {
     expect(params).toEqual([["n1"], [2]]);
   });
 
-  it("describeNotebook returns text or empty", async () => {
-    mockBatchexecute({ [RPC_IDS.GET_SUMMARY]: ["s"] });
-    expect(await new NotebookLMClient(tokens).describeNotebook("n1")).toBe("s");
+  it("describeNotebook reads the summary and suggested questions (recorded 2026-10)", async () => {
+    // data = [[[summary], [[[question, prompt], ...]], null, null, null, [[question, n], ...]], tokenString]
+    mockBatchexecute({
+      [RPC_IDS.GET_SUMMARY]: [
+        [["The **summary**"], [[["Q1?", "Prompt 1"], ["Q2?", "Prompt 2"]]], null, null, null, [["Q1?", 1], ["Q2?", 2]]],
+        "token",
+      ],
+    });
+    expect(await new NotebookLMClient(tokens).describeNotebook("n1")).toEqual({
+      summary: "The **summary**",
+      suggested_questions: ["Q1?", "Q2?"],
+    });
     server.resetHandlers();
     mockBatchexecute({ [RPC_IDS.GET_SUMMARY]: [] });
-    expect(await new NotebookLMClient(tokens).describeNotebook("n1")).toBe("");
+    expect(await new NotebookLMClient(tokens).describeNotebook("n1")).toEqual({ summary: "", suggested_questions: [] });
   });
 
   it("listNotebooks handles empty and clamps maxResults", async () => {
@@ -274,6 +283,22 @@ describe("source RPCs", () => {
     expect(s.type).toBe("youtube");
   });
 
+  it.each([
+    ["https://www.youtube.com/watch?v=x", "youtube"],
+    ["https://m.youtube.com/watch?v=x", "youtube"],
+    ["https://youtu.be/x", "youtube"],
+    ["https://example.com/?r=youtube.com", "web_page"],
+    ["https://notyoutube.com/x", "web_page"],
+  ])("addUrlSource types %s as %s by hostname", async (url, type) => {
+    const captured = mockBatchexecute({ [RPC_IDS.ADD_SOURCE]: [[["web", "T"]]] });
+    const s = await new NotebookLMClient(tokens).addUrlSource("n1", url);
+    expect(s.type).toBe(type);
+    const fReq = decodeURIComponent(captured[0].body.split("f.req=")[1].split("&")[0]);
+    const entry = JSON.parse(JSON.parse(fReq)[0][0][1])[0][0];
+    // YouTube URLs go at entry[7], web pages at entry[2].
+    expect(type === "youtube" ? entry[7] : entry[2]).toEqual([url]);
+  });
+
   it("addUrlSource defaults to web_page", async () => {
     mockBatchexecute({ [RPC_IDS.ADD_SOURCE]: [[["web", "Blog"]]] });
     const s = await new NotebookLMClient(tokens).addUrlSource("n1", "https://example.com");
@@ -293,10 +318,16 @@ describe("source RPCs", () => {
     expect(s.type).toBe("pasted_text");
   });
 
-  it("addDriveSource returns google_docs", async () => {
+  it.each([
+    ["application/vnd.google-apps.document", "google_docs"],
+    ["application/vnd.google-apps.presentation", "google_slides_sheets"],
+    ["application/vnd.google-apps.spreadsheet", "google_slides_sheets"],
+    ["application/pdf", "pdf"],
+    ["image/png", "unknown"],
+  ])("addDriveSource types a %s file as %s", async (mime, type) => {
     mockBatchexecute({ [RPC_IDS.ADD_SOURCE]: [[["d", "Doc"]]] });
-    const s = await new NotebookLMClient(tokens).addDriveSource("n1", "f", "Doc", "application/vnd.google-apps.document");
-    expect(s.type).toBe("google_docs");
+    const s = await new NotebookLMClient(tokens).addDriveSource("n1", "f", "Doc", mime);
+    expect(s.type).toBe(type);
   });
 
   it("getSource maps metadata and content blocks", async () => {
@@ -636,6 +667,12 @@ describe("research RPCs", () => {
     expect(results[1].status).toBe("in_progress");
   });
 
+  it("pollResearch reports an unknown status code as unknown, not in_progress", async () => {
+    // Callers poll until the status leaves in_progress; an unmapped code must not look like "still running".
+    mockBatchexecute({ [RPC_IDS.POLL_RESEARCH]: [[["t1", [null, ["q"], null, [[], null], 42]]]] });
+    expect((await new NotebookLMClient(tokens).pollResearch("n1"))[0].status).toBe("unknown");
+  });
+
   it("pollResearch maps status 7 to import_failed", async () => {
     mockBatchexecute({ [RPC_IDS.POLL_RESEARCH]: [[["t1", [null, ["q"], null, [[], null], 7]]]] });
     expect((await new NotebookLMClient(tokens).pollResearch("n1"))[0].status).toBe("import_failed");
@@ -777,13 +814,13 @@ describe("research RPCs", () => {
           null, // query missing → ""
           null,
           [[ [null, null, null, null] ], null], // source with no title / no type code
-          99, // unknown status → statusMap fallback "in_progress"
+          99, // unknown status → "unknown", so pollers don't wait forever
         ]],
       ]],
     });
     const results = await new NotebookLMClient(tokens).pollResearch("n1");
     expect(results).toHaveLength(1);
-    expect(results[0].status).toBe("in_progress");
+    expect(results[0].status).toBe("unknown");
     expect(results[0].query).toBe("");
     expect(results[0].sources[0].title).toBe("");
   });
@@ -830,12 +867,12 @@ describe("studio create RPCs", () => {
     expect(call.body).toContain("my-prompt");
   });
 
-  it("createReport falls back to Briefing Doc on unknown format", async () => {
-    mockBatchexecute({ [RPC_IDS.CREATE_STUDIO]: [["art", "T", 1]] });
-    const id = await new NotebookLMClient(tokens).createReport("n1", ["s1"], {
-      report_format: "Not A Real Format",
-    });
-    expect(id).toBe("art");
+  it("createReport rejects an unknown format instead of spending quota on a Briefing Doc", async () => {
+    const captured = mockBatchexecute({ [RPC_IDS.CREATE_STUDIO]: [["art", "T", 1]] });
+    await expect(
+      new NotebookLMClient(tokens).createReport("n1", ["s1"], { report_format: "Not A Real Format" }),
+    ).rejects.toThrow(/Invalid report_format "Not A Real Format".*Briefing Doc/);
+    expect(captured.some((c) => c.rpcId === RPC_IDS.CREATE_STUDIO)).toBe(false);
   });
 
   it("createReport uses empty custom_prompt fallback when 'Create Your Own' selected without prompt", async () => {
@@ -1067,10 +1104,10 @@ describe("refresh", () => {
       http.get(`${BASE_URL}`, () => HttpResponse.text("<html></html>")),
     );
     const c = new NotebookLMClient(tokens);
-    // describeNotebook returns data?.[0] || "" from the parsed result;
-    // when result is the raw string "raw-not-json", data[0] is "r".
+    // A raw string is not the recorded nested shape, so the summary comes back empty
+    // rather than as the string's first character.
     const out = await c.describeNotebook("n1");
-    expect(out).toBe("r");
+    expect(out.summary).toBe("");
   });
 
   it("extractRpcResult returns null when no wrb.fr envelope matches", async () => {

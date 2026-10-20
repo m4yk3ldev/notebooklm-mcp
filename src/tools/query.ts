@@ -7,8 +7,9 @@ export const queryTools: McpTool<any>[] = [
     title: "Ask the notebook",
     description:
       "Ask NotebookLM a question that it answers only from the notebook's sources (all of them, or source_ids). " +
-      "Returns the answer, with numbered citations to the source passages it used, and a conversation_id: pass it back " +
-      "to ask follow-up questions in the same conversation. Answers on large notebooks can take a minute.",
+      "Returns the answer and a conversation_id. The answer text keeps NotebookLM's bracketed citation numbers such as " +
+      "[1], but not which passage each number points to. Pass conversation_id back to ask a follow-up; this server " +
+      "remembers the conversation's history while it keeps running.",
     // Not read-only: NotebookLM keeps the exchange in the notebook's chat history.
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     schema: {

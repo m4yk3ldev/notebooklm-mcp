@@ -10,8 +10,18 @@ import * as os from "node:os";
 // "source". Restrict to files under the server's CWD or the OS temp
 // directory. Users who need to ingest files elsewhere should copy them in.
 export function resolveAllowedReadPath(filePath: string): string {
-  const resolved = path.resolve(filePath);
-  const allowedRoots = [path.resolve(process.cwd()), path.resolve(os.tmpdir())];
+  // realpath, not just resolve: a symlink inside an allowed root must not
+  // reach a file outside it. A path that doesn't exist is checked as given.
+  const real = (p: string) => {
+    const abs = path.resolve(p);
+    try {
+      return fs.realpathSync(abs);
+    } catch {
+      return abs;
+    }
+  };
+  const resolved = real(filePath);
+  const allowedRoots = [real(process.cwd()), real(os.tmpdir())];
   const ok = allowedRoots.some(
     (root) => resolved === root || resolved.startsWith(root + path.sep),
   );
@@ -51,7 +61,8 @@ export const sourceTools: McpTool<any>[] = [
     title: "Get source text",
     description:
       "Get the full text NotebookLM extracted from a source, with tables flattened to \"cell | cell\" rows. Returns " +
-      "{ text }, which can be long (a Wikipedia article is around 100,000 characters). Prefer notebook_query to answer " +
+      // 98,670 characters measured live for the Wikipedia "Photosynthesis" article (2026-10-18).
+      "{ text }, which can be long: a long Wikipedia article came to about 100,000 characters. Prefer notebook_query to answer " +
       "questions; use this when the user needs the verbatim text.",
     annotations: READ_ONLY,
     schema: {
@@ -134,7 +145,7 @@ export const sourceTools: McpTool<any>[] = [
     name: "source_sync_drive",
     title: "Sync Google Drive sources",
     description:
-      "Re-import the latest version of the given Google Drive sources, replacing their current content in the notebook. " +
+      "Re-import the given Google Drive sources so the notebook uses the latest version of each file. " +
       "With confirm=false it does nothing and returns pending_confirmation; with confirm=true it syncs and returns how " +
       "many sources were synced.",
     annotations: { ...UPDATES, destructiveHint: true },

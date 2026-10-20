@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -82,7 +82,7 @@ describe("notebookTools", () => {
   it("notebook_get and notebook_summarize pass through", async () => {
     const client = {
       getNotebook: vi.fn().mockResolvedValue({ id: "n1", sources: [] }),
-      describeNotebook: vi.fn().mockResolvedValue("summary text"),
+      describeNotebook: vi.fn().mockResolvedValue({ summary: "summary text", suggested_questions: ["Q?"] }),
     };
     const gotten = await findTool(notebookTools, "notebook_get").execute(
       client,
@@ -96,6 +96,7 @@ describe("notebookTools", () => {
     );
     expect(gotten.notebook.id).toBe("n1");
     expect(described.summary).toBe("summary text");
+    expect(described.suggested_questions).toEqual(["Q?"]);
   });
 });
 
@@ -196,6 +197,20 @@ describe("sourceTools", () => {
         findTool(sourceTools, "source_add_text").execute(
           client,
           { notebook_id: "n1", file_path: "/etc/passwd", title: "T" },
+          noopOpts(),
+        ),
+      ).rejects.toThrow(/outside the allowed roots/);
+      expect(client.addTextSource).not.toHaveBeenCalled();
+    });
+
+    it("rejects a symlink inside an allowed root that points outside it", async () => {
+      const link = join(tempDir, "innocent.txt");
+      symlinkSync("/etc/passwd", link);
+      const client = { addTextSource: vi.fn() };
+      await expect(
+        findTool(sourceTools, "source_add_text").execute(
+          client,
+          { notebook_id: "n1", file_path: link, title: "T" },
           noopOpts(),
         ),
       ).rejects.toThrow(/outside the allowed roots/);
@@ -524,7 +539,7 @@ describe("authTools", () => {
     const result = await findTool(authTools, "auth_save_tokens").execute(
       client,
       {
-        cookies: "SID=a; HSID=b; EXTRA=x",
+        cookies: "SID=a; HSID=b; SSID=c; APISID=d; SAPISID=e; EXTRA=x",
         csrf_token: "csrf",
         session_id: "sid",
       },
@@ -532,32 +547,32 @@ describe("authTools", () => {
     );
     expect(saveTokens).toHaveBeenCalledOnce();
     const [savedTokens] = vi.mocked(saveTokens).mock.calls[0];
-    expect(savedTokens.cookies).toEqual({ SID: "a", HSID: "b", EXTRA: "x" });
+    expect(savedTokens.cookies).toEqual({ SID: "a", HSID: "b", SSID: "c", APISID: "d", SAPISID: "e", EXTRA: "x" });
     expect(savedTokens.csrf_token).toBe("csrf");
     expect(savedTokens.session_id).toBe("sid");
     expect(result._client_action).toBe("reset");
   });
 
-  it("auth_save_tokens accepts empty cookie string", async () => {
-    const result = await findTool(authTools, "auth_save_tokens").execute(
-      {},
-      {},
-      noopOpts(),
+  it.each([
+    ["no cookies at all", {}],
+    ["an empty cookie string", { cookies: "" }],
+    ["cookies missing required ones", { cookies: "SID=a; HSID=b" }],
+  ])("auth_save_tokens refuses %s and keeps the stored session", async (_label, args) => {
+    // Saving would overwrite ~/.notebooklm-mcp/auth.json and sign the user out.
+    await expect(findTool(authTools, "auth_save_tokens").execute({}, args, noopOpts())).rejects.toThrow(
+      /SAPISID/,
     );
-    expect(saveTokens).toHaveBeenCalledOnce();
-    const [savedTokens] = vi.mocked(saveTokens).mock.calls[0];
-    expect(savedTokens.cookies).toEqual({});
-    expect(result._client_action).toBe("reset");
+    expect(saveTokens).not.toHaveBeenCalled();
   });
 
   it("auth_save_tokens skips cookie segments with no '=' separator", async () => {
     await findTool(authTools, "auth_save_tokens").execute(
       {},
-      { cookies: "SID=a; ORPHAN; HSID=b" },
+      { cookies: "SID=a; ORPHAN; HSID=b; SSID=c; APISID=d; SAPISID=e" },
       noopOpts(),
     );
     const [savedTokens] = vi.mocked(saveTokens).mock.calls[0];
-    expect(savedTokens.cookies).toEqual({ SID: "a", HSID: "b" });
+    expect(savedTokens.cookies).toEqual({ SID: "a", HSID: "b", SSID: "c", APISID: "d", SAPISID: "e" });
     expect(savedTokens.cookies.ORPHAN).toBeUndefined();
   });
 });
