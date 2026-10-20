@@ -11,6 +11,12 @@ export interface McpTool<T extends z.ZodRawShape = z.ZodRawShape> {
   /** MCP behaviour hints (read-only, destructive, idempotent, open-world). */
   annotations?: ToolAnnotations;
   schema?: T;
+  /**
+   * Shape of the tool's result, published as the MCP outputSchema. registerTools
+   * adds status and message; for tools taking `confirm` every field becomes
+   * optional, since the pending_confirmation reply carries none of them.
+   */
+  output?: z.ZodRawShape;
   execute: (
     client: NotebookLMClient,
     args: z.infer<z.ZodObject<T>>,
@@ -24,6 +30,24 @@ export const READ_ONLY: ToolAnnotations = { readOnlyHint: true, destructiveHint:
 export const CREATES: ToolAnnotations = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true };
 export const UPDATES: ToolAnnotations = { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true };
 export const DESTROYS: ToolAnnotations = { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true };
+
+/** Result shapes shared by several tools' output schemas. */
+export const SOURCE_OUT = z.object({
+  id: z.string().describe("Source ID"),
+  title: z.string(),
+  type: z.string().describe("web_page, youtube, pasted_text, pdf, google_docs, google_slides_sheets, ... or unknown"),
+});
+
+export const NOTEBOOK_OUT = z.object({
+  id: z.string().describe("Notebook ID"),
+  title: z.string(),
+  emoji: z.string().nullable(),
+  sources: z.array(SOURCE_OUT),
+  is_shared: z.boolean(),
+  ownership: z.enum(["mine", "shared"]),
+  created_at: z.string().nullable().describe("ISO 8601 timestamp"),
+  modified_at: z.string().nullable().describe("ISO 8601 timestamp"),
+});
 
 /** Parameter descriptions repeated across tools. */
 export const PARAM = {
@@ -61,6 +85,20 @@ export async function resolveSourceIds(
   return notebook.sources.map((s) => s.id);
 }
 
+/** The outputSchema registered for a tool: its own fields plus status and message. */
+export function outputShape(tool: McpTool<any>): z.ZodRawShape | undefined {
+  if (!tool.output) return undefined;
+  const confirmable = Boolean(tool.schema && "confirm" in tool.schema);
+  const fields = confirmable
+    ? Object.fromEntries(Object.entries(tool.output).map(([k, v]) => [k, v.optional()]))
+    : tool.output;
+  return {
+    status: confirmable ? z.enum(["success", "pending_confirmation"]) : z.literal("success"),
+    message: z.string().optional().describe("Human-readable outcome or next step"),
+    ...fields,
+  };
+}
+
 export function registerTools(
   server: McpServer,
   tools: McpTool<any>[],
@@ -74,14 +112,19 @@ export function registerTools(
     if (tool.schema) {
       config.inputSchema = tool.schema;
     }
+    const output = outputShape(tool);
+    if (output) config.outputSchema = output;
     server.registerTool(tool.name, config, async (args: any) => {
       try {
         const result = await tool.execute(getClient(opts?.queryTimeout), args, { queryTimeout: opts?.queryTimeout });
-        if (result && result[CLIENT_ACTION_KEY] === CLIENT_ACTION_RESET && opts?.onClientReset) {
-          opts.onClientReset();
+        // Always strip the marker: it is not part of the published outputSchema.
+        if (result && result[CLIENT_ACTION_KEY] === CLIENT_ACTION_RESET) {
+          opts?.onClientReset?.();
           delete result[CLIENT_ACTION_KEY];
         }
-        return { content: [{ type: "text" as const, text: JSON.stringify({ status: "success", ...result }, null, 2) }] };
+        const body = { status: "success", ...result };
+        const reply = { content: [{ type: "text" as const, text: JSON.stringify(body, null, 2) }] };
+        return output ? { ...reply, structuredContent: body } : reply;
       } catch (e) {
         return { content: [{ type: "text" as const, text: JSON.stringify({ status: "error", error: String(e) }, null, 2) }], isError: true };
       }

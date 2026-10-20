@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { McpTool, pendingConfirmation, READ_ONLY, CREATES, UPDATES, DESTROYS, PARAM } from "./index.js";
+import { McpTool, pendingConfirmation, READ_ONLY, CREATES, UPDATES, DESTROYS, PARAM, SOURCE_OUT } from "./index.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -49,6 +49,11 @@ export const sourceTools: McpTool<any>[] = [
       notebook_id: z.string().describe(PARAM.notebookId),
       source_id: z.string().describe(PARAM.sourceId),
     },
+    output: {
+      source: SOURCE_OUT.extend({
+        content_length: z.number().describe("Characters of text NotebookLM extracted; 0 if it returned none"),
+      }),
+    },
     execute: async (client, { notebook_id, source_id }) => {
       const source = await client.getSource(source_id, notebook_id);
       return {
@@ -69,6 +74,7 @@ export const sourceTools: McpTool<any>[] = [
       notebook_id: z.string().describe(PARAM.notebookId),
       source_id: z.string().describe(PARAM.sourceId),
     },
+    output: { text: z.string().nullable().describe("The extracted text; null if NotebookLM returned none") },
     execute: async (client, { notebook_id, source_id }) => {
       const source = await client.getSource(source_id, notebook_id);
       return { text: source.content };
@@ -86,6 +92,7 @@ export const sourceTools: McpTool<any>[] = [
       notebook_id: z.string().describe(PARAM.notebookId),
       url: z.string().describe("Public http(s) URL of a web page or a YouTube video"),
     },
+    output: { source: SOURCE_OUT },
     execute: async (client, { notebook_id, url }) => {
       const source = await client.addUrlSource(notebook_id, url);
       return { source, message: "URL source added" };
@@ -95,9 +102,10 @@ export const sourceTools: McpTool<any>[] = [
     name: "source_add_text",
     title: "Add text source",
     description:
-      "Add text as a source. Pass the text in content, or a file_path to read it from a local file. file_path must sit " +
-      "under the server's working directory or the OS temp directory; for any other file, read it yourself and pass " +
-      "content. Returns the new source (id, title, type pasted_text).",
+      "Add text as a source: pass it in content, or point file_path at a local file (content wins if both are set). " +
+      "A file_path outside the server's working directory and the OS temp directory is refused; read such a file " +
+      "yourself and pass content. Returns the new source (id, title, type pasted_text). For a web page or YouTube " +
+      "video use source_add_url; for a Drive file, source_add_drive.",
     annotations: CREATES,
     schema: {
       notebook_id: z.string().describe(PARAM.notebookId),
@@ -108,6 +116,7 @@ export const sourceTools: McpTool<any>[] = [
         .describe("Local file to read the text from, under the server's working directory or the OS temp directory"),
       title: z.string().describe("Title shown for the source in the notebook"),
     },
+    output: { source: SOURCE_OUT },
     execute: async (client, { notebook_id, content, file_path, title }) => {
       let documentContent = content;
       if (!documentContent && file_path) {
@@ -125,8 +134,9 @@ export const sourceTools: McpTool<any>[] = [
     name: "source_add_drive",
     title: "Add Google Drive source",
     description:
-      "Add a Google Drive file as a source, by its Drive file ID and MIME type. Returns the new source (id, title, type). " +
-      "The source is a snapshot: when the Drive file changes, refresh it with source_sync_drive.",
+      "Add a Google Drive file as a source, by its Drive file ID and MIME type; the signed-in Google account must be " +
+      "able to open the file. Returns the new source (id, title, type). The source is a snapshot: when the Drive file " +
+      "changes, refresh it with source_sync_drive. For a public web page use source_add_url instead.",
     annotations: CREATES,
     schema: {
       notebook_id: z.string().describe(PARAM.notebookId),
@@ -136,6 +146,7 @@ export const sourceTools: McpTool<any>[] = [
         .string()
         .describe("MIME type of the Drive file, e.g. application/vnd.google-apps.document for a Google Doc or application/pdf"),
     },
+    output: { source: SOURCE_OUT },
     execute: async (client, { notebook_id, file_id, title, doc_type }) => {
       const source = await client.addDriveSource(notebook_id, file_id, title, doc_type);
       return { source, message: "Drive source added" };
@@ -145,7 +156,8 @@ export const sourceTools: McpTool<any>[] = [
     name: "source_sync_drive",
     title: "Sync Google Drive sources",
     description:
-      "Re-import the given Google Drive sources so the notebook uses the latest version of each file. " +
+      "Re-import Google Drive sources (added with source_add_drive) so the notebook uses the latest version of each " +
+      "file, replacing the stored snapshot. " +
       "With confirm=false it does nothing and returns pending_confirmation; with confirm=true it syncs and returns how " +
       "many sources were synced.",
     annotations: { ...UPDATES, destructiveHint: true },
@@ -154,6 +166,7 @@ export const sourceTools: McpTool<any>[] = [
       source_ids: z.array(z.string()).describe("IDs of the Drive sources to sync, from notebook_get"),
       confirm: z.boolean().describe("Must be true to sync. With false the tool only returns pending_confirmation"),
     },
+    output: {},
     execute: async (client, { notebook_id, source_ids, confirm }) => {
       if (!confirm) return pendingConfirmation("Set confirm=true to sync these Drive sources.");
       await client.syncDrive(source_ids, notebook_id);
@@ -173,6 +186,7 @@ export const sourceTools: McpTool<any>[] = [
       source_id: z.string().describe(PARAM.sourceId),
       confirm: z.boolean().describe("Must be true to delete. With false the tool only returns pending_confirmation"),
     },
+    output: {},
     execute: async (client, { notebook_id, source_id, confirm }) => {
       if (!confirm) return pendingConfirmation("Set confirm=true to delete this source. This cannot be undone.");
       await client.deleteSource(source_id, notebook_id);

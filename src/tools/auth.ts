@@ -15,6 +15,7 @@ export const authTools: McpTool<any>[] = [
       "`npx -y @m4ykeldev/notebooklm-mcp auth` in a terminal. Call it once after an auth error, then retry.",
     // Rewrites the local token cache; never touches notebooks.
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    output: {},
     execute: async (client) => {
       await client.refreshAuth();
       return { message: "Authentication tokens refreshed" };
@@ -37,6 +38,7 @@ export const authTools: McpTool<any>[] = [
       csrf_token: z.string().optional().describe("CSRF token (SNlM0e); optional, extracted from the page when omitted"),
       session_id: z.string().optional().describe("Session ID (FdrFJe); optional, extracted from the page when omitted"),
     },
+    output: {},
     execute: async (client, { cookies: cookieStr, csrf_token, session_id }) => {
       const cookieMap: Record<string, string> = {};
       if (cookieStr) {

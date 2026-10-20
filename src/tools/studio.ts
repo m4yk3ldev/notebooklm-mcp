@@ -19,6 +19,7 @@ const STUDIO_RUN =
   "Uses the user's NotebookLM quota and takes several minutes, so agree on the options with the user first: with " +
   "confirm=false it does nothing and returns pending_confirmation. With confirm=true it returns the artifact_id; poll " +
   "studio_status until that artifact is completed.";
+const STUDIO_OUT = { artifact_id: z.string().describe("ID of the new artifact, as listed by studio_status") };
 const STUDIO_NO_FILE = "This artifact has no download file: the user opens it in the notebook in NotebookLM.";
 
 export const studioTools: McpTool<any>[] = [
@@ -41,6 +42,7 @@ export const studioTools: McpTool<any>[] = [
       focus_prompt: z.string().optional().describe(PARAM.focusPrompt),
       confirm: z.boolean().describe(PARAM.confirmStudio),
     },
+    output: STUDIO_OUT,
     execute: async (client, { notebook_id, source_ids, format, length, language, focus_prompt, confirm }) => {
       if (!confirm) return pendingConfirmation("Set confirm=true to generate audio overview.");
       const ids = await resolveSourceIds(client, notebook_id, source_ids);
@@ -64,6 +66,7 @@ export const studioTools: McpTool<any>[] = [
       focus_prompt: z.string().optional().describe(PARAM.focusPrompt),
       confirm: z.boolean().describe(PARAM.confirmStudio),
     },
+    output: STUDIO_OUT,
     execute: async (client, { notebook_id, source_ids, format, visual_style, language, focus_prompt, confirm }) => {
       if (!confirm) return pendingConfirmation("Set confirm=true to generate video overview.");
       const ids = await resolveSourceIds(client, notebook_id, source_ids);
@@ -87,6 +90,7 @@ export const studioTools: McpTool<any>[] = [
       focus_prompt: z.string().optional().describe(PARAM.focusPrompt),
       confirm: z.boolean().describe(PARAM.confirmStudio),
     },
+    output: STUDIO_OUT,
     execute: async (client, { notebook_id, source_ids, orientation, detail_level, language, focus_prompt, confirm }) => {
       if (!confirm) return pendingConfirmation("Set confirm=true to generate infographic.");
       const ids = await resolveSourceIds(client, notebook_id, source_ids);
@@ -113,6 +117,7 @@ export const studioTools: McpTool<any>[] = [
       focus_prompt: z.string().optional().describe(PARAM.focusPrompt),
       confirm: z.boolean().describe(PARAM.confirmStudio),
     },
+    output: STUDIO_OUT,
     execute: async (client, { notebook_id, source_ids, format, length, language, focus_prompt, confirm }) => {
       if (!confirm) return pendingConfirmation("Set confirm=true to generate slide deck.");
       const ids = await resolveSourceIds(client, notebook_id, source_ids);
@@ -138,6 +143,7 @@ export const studioTools: McpTool<any>[] = [
       language: z.string().optional().describe(PARAM.language),
       confirm: z.boolean().describe(PARAM.confirmStudio),
     },
+    output: STUDIO_OUT,
     execute: async (client, { notebook_id, source_ids, report_format, custom_prompt, language, confirm }) => {
       if (!confirm) return pendingConfirmation("Set confirm=true to generate report.");
       const ids = await resolveSourceIds(client, notebook_id, source_ids);
@@ -157,6 +163,7 @@ export const studioTools: McpTool<any>[] = [
       difficulty: z.string().optional().describe(`Difficulty: ${FLASHCARD_DIFFICULTIES.optionsStr()} (default medium)`),
       confirm: z.boolean().describe(PARAM.confirmStudio),
     },
+    output: STUDIO_OUT,
     execute: async (client, { notebook_id, source_ids, difficulty, confirm }) => {
       if (!confirm) return pendingConfirmation("Set confirm=true to generate flashcards.");
       const ids = await resolveSourceIds(client, notebook_id, source_ids);
@@ -177,6 +184,7 @@ export const studioTools: McpTool<any>[] = [
       difficulty: z.string().optional().describe(`Difficulty: ${FLASHCARD_DIFFICULTIES.optionsStr()} (default medium)`),
       confirm: z.boolean().describe(PARAM.confirmStudio),
     },
+    output: STUDIO_OUT,
     execute: async (client, { notebook_id, source_ids, question_count, difficulty, confirm }) => {
       if (!confirm) return pendingConfirmation("Set confirm=true to generate quiz.");
       const ids = await resolveSourceIds(client, notebook_id, source_ids);
@@ -190,10 +198,21 @@ export const studioTools: McpTool<any>[] = [
     description:
       "List the notebook's Studio artifacts. Returns each one's id, type (audio, video, report, flashcards, quiz, " +
       "infographic, slide_deck), status (pending, generating, completed or failed) and download_url: set for completed " +
-      "audio, video, infographics and slide decks (PDF), null otherwise. After a *_create call, poll every 30-60 seconds.",
+      "audio, video, infographics and slide decks (PDF), null otherwise. It lists older artifacts too: after a *_create " +
+      "call, poll every 30-60 seconds and find yours by its artifact_id.",
     annotations: READ_ONLY,
     schema: {
       notebook_id: z.string().describe(PARAM.notebookId),
+    },
+    output: {
+      artifacts: z.array(
+        z.object({
+          id: z.string().describe("Artifact ID, as returned by the *_create tools"),
+          type: z.string().describe("audio, video, report, flashcards, quiz, infographic, slide_deck, data_table or unknown"),
+          status: z.enum(["pending", "generating", "completed", "failed"]),
+          download_url: z.string().nullable(),
+        }),
+      ),
     },
     execute: async (client, { notebook_id }) => {
       const artifacts = await client.pollStudio(notebook_id);
