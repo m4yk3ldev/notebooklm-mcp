@@ -1,17 +1,22 @@
 import { z } from "zod";
-import { McpTool, pendingConfirmation, READ_ONLY, CREATES, UPDATES, DESTROYS, PARAM } from "./index.js";
+import { McpTool, pendingConfirmation, READ_ONLY, CREATES, UPDATES, DESTROYS, PARAM, NOTEBOOK_OUT } from "./index.js";
 
 export const notebookTools: McpTool<any>[] = [
   {
     name: "notebook_list",
     title: "List notebooks",
     description:
-      "List the user's NotebookLM notebooks. Returns each notebook's id, title, emoji, sources (id, title, type), " +
-      "ownership (mine or shared) and created/modified timestamps, plus a count. Start here to find a notebook id, " +
-      "and match by title before creating a new notebook.",
+      "List the user's NotebookLM notebooks, owned and shared. Returns each notebook's id, title, emoji, sources " +
+      "(id, title, type), ownership and timestamps, plus a count. Start here to find a notebook_id by title; " +
+      "once you have the id, notebook_get reads one notebook. There is no paging: if count equals max_results, " +
+      "call again with a higher max_results.",
     annotations: READ_ONLY,
     schema: {
       max_results: z.number().optional().describe("Maximum number of notebooks to return (default 100)"),
+    },
+    output: {
+      notebooks: z.array(NOTEBOOK_OUT),
+      count: z.number().describe("Number of notebooks returned"),
     },
     execute: async (client, { max_results }) => {
       const notebooks = await client.listNotebooks(max_results);
@@ -22,12 +27,14 @@ export const notebookTools: McpTool<any>[] = [
     name: "notebook_create",
     title: "Create notebook",
     description:
-      "Create an empty NotebookLM notebook. Returns the new notebook with its id and title. Check notebook_list first " +
-      "to avoid a duplicate, then add sources with source_add_url, source_add_text or source_add_drive.",
+      "Create an empty NotebookLM notebook. Returns the new notebook; keep its id for every later call. Each call " +
+      "creates another notebook, so first look for one with this title in notebook_list. Then fill it: " +
+      "source_add_url, source_add_text or source_add_drive for sources you have, research_start to find some.",
     annotations: CREATES,
     schema: {
       title: z.string().describe("Title for the new notebook"),
     },
+    output: { notebook: NOTEBOOK_OUT },
     execute: async (client, { title }) => {
       const notebook = await client.createNotebook(title);
       return { notebook };
@@ -44,6 +51,7 @@ export const notebookTools: McpTool<any>[] = [
     schema: {
       notebook_id: z.string().describe(PARAM.notebookId),
     },
+    output: { notebook: NOTEBOOK_OUT },
     execute: async (client, { notebook_id }) => {
       const notebook = await client.getNotebook(notebook_id);
       return { notebook };
@@ -60,6 +68,10 @@ export const notebookTools: McpTool<any>[] = [
     schema: {
       notebook_id: z.string().describe(PARAM.notebookId),
     },
+    output: {
+      summary: z.string().describe("Overview of what the sources cover"),
+      suggested_questions: z.array(z.string()).describe("Questions NotebookLM suggests asking with notebook_query"),
+    },
     execute: async (client, { notebook_id }) => {
       const { summary, suggested_questions } = await client.describeNotebook(notebook_id);
       return { summary, suggested_questions };
@@ -69,13 +81,14 @@ export const notebookTools: McpTool<any>[] = [
     name: "notebook_rename",
     title: "Rename notebook",
     description:
-      "Change a notebook's title. Returns a confirmation message with the new title. Use notebook_list or notebook_get " +
-      "to find the notebook_id first.",
+      "Change a notebook's title; its sources, notes and chat stay as they are. Returns a confirmation message with " +
+      "the new title. Find the notebook_id with notebook_list first.",
     annotations: UPDATES,
     schema: {
       notebook_id: z.string().describe(PARAM.notebookId),
       new_title: z.string().describe("New title for the notebook"),
     },
+    output: {},
     execute: async (client, { notebook_id, new_title }) => {
       await client.renameNotebook(notebook_id, new_title);
       return { message: `Notebook renamed to "${new_title}"` };
@@ -93,6 +106,7 @@ export const notebookTools: McpTool<any>[] = [
       notebook_id: z.string().describe(PARAM.notebookId),
       confirm: z.boolean().describe("Must be true to delete. With false the tool only returns pending_confirmation"),
     },
+    output: {},
     execute: async (client, { notebook_id, confirm }) => {
       if (!confirm) return pendingConfirmation("Set confirm=true to delete this notebook. This cannot be undone.");
       await client.deleteNotebook(notebook_id);

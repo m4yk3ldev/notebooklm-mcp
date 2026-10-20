@@ -24,6 +24,10 @@ export const queryTools: McpTool<any>[] = [
         .optional()
         .describe("conversation_id returned by a previous notebook_query, to ask a follow-up in the same conversation"),
     },
+    output: {
+      answer: z.string().describe("NotebookLM's answer, with bracketed citation numbers such as [1]"),
+      conversation_id: z.string().nullable().describe("Pass back as conversation_id to ask a follow-up"),
+    },
     execute: async (client, { notebook_id, query, source_ids, conversation_id }) => {
       // With no ids the server falls back to whatever is ticked in the web
       // UI, so always send the full list.

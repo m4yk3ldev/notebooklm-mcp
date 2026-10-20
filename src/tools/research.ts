@@ -17,6 +17,7 @@ export const researchTools: McpTool<any>[] = [
       source: z.string().optional().describe(`Source: ${RESEARCH_SOURCES.optionsStr()} (default: web)`),
       mode: z.string().optional().describe(`Mode: ${RESEARCH_MODES.optionsStr()} (default: fast)`),
     },
+    output: { task_id: z.string().describe("Pass to research_status and research_import") },
     execute: async (client, { notebook_id, query, source, mode }) => {
       const result = await client.startResearch(notebook_id, query, source, mode);
       return { task_id: result.taskId, message: "Research started. Use research_status to poll progress." };
@@ -34,6 +35,26 @@ export const researchTools: McpTool<any>[] = [
     schema: {
       notebook_id: z.string().describe(PARAM.notebookId),
       task_id: z.string().optional().describe("task_id from research_start; omit to list every research task in the notebook"),
+    },
+    output: {
+      results: z.array(
+        z.object({
+          task_id: z.string(),
+          status: z.enum(["in_progress", "completed", "imported", "import_failed", "unknown"]),
+          query: z.string(),
+          summary: z.string().nullable(),
+          sources: z
+            .array(
+              z.object({
+                url: z.string().nullable().describe("null for results research_import cannot import, such as Drive files"),
+                title: z.string(),
+                description: z.string().nullable(),
+                type: z.string().describe("web, google_doc, google_slides, google_sheets, deep_report or unknown"),
+              }),
+            )
+            .describe("Found sources; a source's position here is its index for research_import"),
+        }),
+      ),
     },
     execute: async (client, { notebook_id, task_id }) => {
       const results = await client.pollResearch(notebook_id, task_id);
@@ -54,6 +75,7 @@ export const researchTools: McpTool<any>[] = [
       task_id: z.string().describe("task_id from research_start"),
       source_indices: z.array(z.number()).optional().describe("Indices into the task's sources as listed by research_status (omit to import every web result)"),
     },
+    output: {},
     execute: async (client, { notebook_id, task_id, source_indices }) => {
       const { requested, imported, skipped } = await client.importResearch(notebook_id, task_id, source_indices);
       const note = skipped ? ` (skipped ${skipped} Drive result${skipped === 1 ? "" : "s"} that can't be imported)` : "";

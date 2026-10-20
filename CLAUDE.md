@@ -92,13 +92,14 @@ export const myTools: McpTool<typeof schema>[] = [{
   description: "What it does. Returns ... When to use it vs related tools.",
   annotations: READ_ONLY,  // or CREATES / UPDATES / DESTROYS (src/tools/index.ts)
   schema: { param: z.string().describe("...") },  // zod schema — omit for no-arg tools
+  output: { field: z.string() },  // result shape, published as outputSchema — {} if only status/message
   execute: async (client, args, opts) => { ... }
 }];
 ```
 
 `src/__tests__/tools-metadata.test.ts` enforces the catalog rules: every tool has a title, full annotations, a description of at least 120 characters that says what it returns, and a description on every parameter; tools taking `confirm` say so and are not read-only; `*_delete` tools are destructive. Directories such as Glama grade these descriptions (one-liners scored C). Shared parameter wording lives in `PARAM` in `src/tools/index.ts`. The server's cross-tool workflow guidance is `SERVER_INSTRUCTIONS` in `src/server.ts`, sent to clients at initialization; the reported server version comes from `package.json` (`src/version.ts`).
 
-`registerTools()` in `src/tools/index.ts` loops over these, registers them on the `McpServer`, and wraps execution with error handling. Tool results are returned as JSON with a `status` field. Use `{ _client_action: "reset" }` in a result to trigger client re-initialization (used after auth changes).
+`registerTools()` in `src/tools/index.ts` loops over these, registers them on the `McpServer`, and wraps execution with error handling. Tool results are returned as JSON with a `status` field, both as text and as `structuredContent`. `outputShape()` adds `status` and `message` to each tool's `output`, and makes every field optional for tools taking `confirm`. MCP clients validate `structuredContent` against the published JSON Schema, which forbids undeclared keys, so a field added to a result must be added to `output` too; `src/__tests__/tools-output.test.ts` runs every tool through a real SDK client to catch that. Shared shapes: `NOTEBOOK_OUT`, `SOURCE_OUT`. Use `{ _client_action: "reset" }` in a result to trigger client re-initialization (used after auth changes).
 
 ### RPC Integration
 
