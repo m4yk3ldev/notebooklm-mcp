@@ -677,7 +677,7 @@ Once wired up, your AI can drive NotebookLM end-to-end with natural language. Th
 | Goal | Sample prompt | Tools the model will call |
 |---|---|---|
 | Inventory | _"Show me every NotebookLM project I own"_ | `notebook_list` |
-| Start a project | _"Create a notebook called 'Q3 Earnings' and add the AAPL 10-Q PDF at https://…"_ | `notebook_create`, `notebook_add_url` |
+| Start a project | _"Create a notebook called 'Q3 Earnings' and add the AAPL 10-Q PDF at https://…"_ | `notebook_create`, `source_add_url` |
 | Grounded Q&A | _"From the AAPL notebook, what is the year-over-year services revenue change?"_ | `notebook_query` |
 | Multi-source brief | _"In my 'Climate Policy' notebook, generate a one-page briefing doc focused on IRA tax credits"_ | `report_create`, `studio_status` |
 | Studio podcast | _"Make a 10-min audio overview of my 'AI Safety Reading' notebook"_ | `audio_overview_create`, `studio_status` |
@@ -686,7 +686,16 @@ Once wired up, your AI can drive NotebookLM end-to-end with natural language. Th
 
 ## 🛠 Complete Tool Reference (27)
 
-Every tool is designed to work seamlessly within your AI's context window.
+Every tool carries a title, a description of what it returns, and MCP annotations (read-only, destructive, idempotent), so clients can tell safe lookups from changes. The server also sends usage instructions at initialization.
+
+> **Renamed in v0.4.0.** Tool names now follow one `resource_action` scheme. If your client allow-lists tools by name (e.g. `mcp__notebooklm__notebook_add_url` in Claude Code permissions), update it:
+>
+> | Before | Now |
+> | :-- | :-- |
+> | `notebook_add_url` / `notebook_add_text` / `notebook_add_drive` | `source_add_url` / `source_add_text` / `source_add_drive` |
+> | `source_describe` | `source_get` |
+> | `notebook_describe` | `notebook_summarize` |
+> | `refresh_auth` / `save_auth_tokens` | `auth_refresh` / `auth_save_tokens` |
 
 ### 📔 Notebook Management
 
@@ -695,7 +704,7 @@ Every tool is designed to work seamlessly within your AI's context window.
 | `notebook_list`     | Get an overview of all your notebooks, including titles, source counts, and ownership metadata. |
 | `notebook_create`   | Create a new NotebookLM project instantly from your terminal or AI assistant.                   |
 | `notebook_get`      | Retrieve deep metadata and a full list of sources for a specific notebook.                      |
-| `notebook_describe` | Get a high-level, AI-generated summary of everything inside a notebook.                         |
+| `notebook_summarize` | Get an AI-generated summary of the notebook plus the questions NotebookLM suggests asking.      |
 | `notebook_rename`   | Update the title of an existing notebook.                                                       |
 | `notebook_delete`   | Permanently remove a notebook (requires explicit confirmation).                                 |
 
@@ -703,10 +712,10 @@ Every tool is designed to work seamlessly within your AI's context window.
 
 | Tool                 | Description                                                                            |
 | :------------------- | :------------------------------------------------------------------------------------- |
-| `notebook_add_url`   | Add any website or YouTube video as a source. Transcripts are automatically handled.   |
-| `notebook_add_text`  | Ingest raw text snippets or local file contents directly into your project.            |
-| `notebook_add_drive` | Connect and import documents, sheets, or slides from your Google Drive.                |
-| `source_describe`    | Get detailed AI analysis, summaries, and key topics for any individual source.         |
+| `source_add_url`   | Add any public website or YouTube video as a source. Returns the new source's ID.      |
+| `source_add_text`  | Ingest raw text snippets or local file contents. Returns the new source's ID.          |
+| `source_add_drive` | Import a Google Drive file by its file ID. Returns the new source's ID.                |
+| `source_get`    | Get a source's title, type and extracted-text length (the text itself: next tool).     |
 | `source_get_content` | Extract the full underlying text of a source for processing by other AI tools.         |
 | `source_sync_drive`  | Sync selected Google Drive sources to pull the latest changes into NotebookLM.         |
 | `source_delete`      | Remove a specific source from your notebook.                                           |
@@ -718,7 +727,7 @@ Every tool is designed to work seamlessly within your AI's context window.
 | `research_start`  | Launch an autonomous research task using Google's engine (Web or Drive sources).      |
 | `research_status` | Track the progress of active research tasks and view discovered insights.             |
 | `research_import` | Instantly import the findings of a research task as new sources in your notebook.     |
-| `notebook_query`  | Ask complex, grounded questions. Answers are cited directly from your sources.        |
+| `notebook_query`  | Ask questions answered only from your sources, with follow-ups in the same conversation. |
 
 ### 🎬 Studio (AI Content Generation)
 
@@ -737,8 +746,8 @@ Every tool is designed to work seamlessly within your AI's context window.
 
 | Tool               | Description                                                            |
 | :----------------- | :--------------------------------------------------------------------- |
-| `refresh_auth`     | Manually trigger a session refresh if you encounter connection issues. |
-| `save_auth_tokens` | Manually save cookie data (legacy fallback method).                    |
+| `auth_refresh`     | Manually trigger a session refresh if you encounter connection issues. |
+| `auth_save_tokens` | Manually save cookie data (legacy fallback method).                    |
 
 ---
 
@@ -770,7 +779,7 @@ notebooklm-mcp --version
 | HTTP 401 with valid cookies (`v0.3.1` and older) | NotebookLM moved to `notebook.google.com` | Upgrade to the latest version |
 | `research_import` says _"Imported X of Y"_ with X < Y | NotebookLM could not fetch some URLs | Retry, or pick other results. Drive results are skipped; only web results import |
 | Tool calls hang past 2 min | Big studio job over default timeout | Restart server with `--query-timeout 300000` |
-| _"file_path … outside the allowed roots"_ | `notebook_add_text` got a path outside cwd / tmp | Copy the file into your working directory or pass `content` inline |
+| _"file_path … outside the allowed roots"_ | `source_add_text` got a path outside cwd / tmp | Copy the file into your working directory or pass `content` inline |
 | MCP client reports server crashed on startup | `dist/cli.js` missing (dev clone) | `pnpm install && pnpm run build` |
 | Multiple Chrome windows pop up on concurrent failures | Older version without single-flight mutex | Upgrade to ≥ `v0.2.5` |
 
@@ -788,7 +797,7 @@ notebooklm-mcp --version
 ## 🛡 Security & Privacy
 
 - **Local Storage** with hardened perms. Tokens live at `~/.notebooklm-mcp/auth.json` (mode `0600`) inside `~/.notebooklm-mcp/` (mode `0700`). Nothing leaves your machine except calls to Google.
-- **Path-traversal guard**. `notebook_add_text` rejects `file_path` arguments outside the working directory or the OS temp directory — a hostile MCP prompt cannot ask the server to read your `~/.ssh/id_rsa`.
+- **Path-traversal guard**. `source_add_text` rejects `file_path` arguments outside the working directory or the OS temp directory — a hostile MCP prompt cannot ask the server to read your `~/.ssh/id_rsa`.
 - **Loopback-only Chrome DevTools**. The automated auth flow launches Chrome with an OS-assigned ephemeral port bound to `127.0.0.1` — no fixed-port squatting, no LAN exposure.
 - **Single-flight auth refresh**. Concurrent requests that hit an expired session share one refresh promise instead of each spawning their own Chrome.
 - **Supply-chain gated releases**. Every publish runs gitleaks → osv-scanner → `pnpm audit` (high+) → `npm audit signatures` (Sigstore) → lockfile registry pinning → publish-manifest preview before `pnpm publish` ships via OIDC trusted publishers. See [CONTRIBUTING.md → Releasing on GitHub](https://github.com/m4yk3ldev/notebooklm-mcp/blob/main/CONTRIBUTING.md#releasing).

@@ -1,11 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { registerToolSpy, McpServerCtor } = vi.hoisted(() => {
+const { registerToolSpy, McpServerCtor, ctorCalls } = vi.hoisted(() => {
   const registerToolSpy = vi.fn();
+  const ctorCalls: any[][] = [];
   class McpServerCtor {
     registerTool = registerToolSpy;
+    constructor(...args: any[]) {
+      ctorCalls.push(args);
+    }
   }
-  return { registerToolSpy, McpServerCtor };
+  return { registerToolSpy, McpServerCtor, ctorCalls };
 });
 
 const { clientInstances, NotebookLMClientCtor } = vi.hoisted(() => {
@@ -70,6 +74,18 @@ beforeEach(() => {
 });
 
 describe("createServer", () => {
+  it("reports the package version and publishes usage instructions", async () => {
+    const { readFileSync } = await import("node:fs");
+    const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
+    ctorCalls.length = 0;
+    const { createServer } = await freshServerModule();
+    createServer();
+    const [info, options] = ctorCalls[0];
+    expect(info).toEqual({ name: "notebooklm", version: pkg.version });
+    expect(options.instructions).toMatch(/notebook_list/);
+    expect(options.instructions).toMatch(/confirm/);
+  });
+
   it("constructs an McpServer and registers every tool exactly once", async () => {
     const { createServer } = await freshServerModule();
     const server = createServer();
@@ -115,14 +131,14 @@ describe("createServer", () => {
     const { createServer } = await freshServerModule();
     createServer();
 
-    // save_auth_tokens is the reset-triggering tool; find its handler.
+    // auth_save_tokens is the reset-triggering tool; find its handler.
     const saveCall = registerToolSpy.mock.calls.find(
-      (c) => c[0] === "save_auth_tokens",
+      (c) => c[0] === "auth_save_tokens",
     )!;
     const saveHandler = saveCall[2];
 
     // First invocation instantiates client #1, then resets.
-    await saveHandler({});
+    await saveHandler({ cookies: "SID=a; HSID=b; SSID=c; APISID=d; SAPISID=e" });
     expect(clientInstances).toHaveLength(1);
 
     // Next tool call should build a fresh client because reset nulled the cached one.

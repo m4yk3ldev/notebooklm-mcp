@@ -44,6 +44,17 @@ describe("registerTools", () => {
     expect(Object.keys(registered)).toEqual(["a", "b"]);
   });
 
+  it("passes title and annotations through to the server", () => {
+    const { server } = makeServerStub();
+    const annotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true };
+    registerTools(server as any, [
+      { name: "t", title: "Tee", description: "d", annotations, execute: async () => ({}) },
+    ], () => ({}) as any);
+    const config = server.registerTool.mock.calls[0][1];
+    expect(config.title).toBe("Tee");
+    expect(config.annotations).toEqual(annotations);
+  });
+
   it("passes inputSchema only when tool declares schema", () => {
     const { server } = makeServerStub();
     const tools: McpTool<any>[] = [

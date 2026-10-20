@@ -69,19 +69,19 @@ The server uses cookie-based authentication.
 ## Engineering Standards & Conventions
 
 ### Development Workflow
-1. **Tool Addition**: Define new tools in `src/tools/` using the `McpServer.tool()` pattern or the project's internal `registerTools` abstraction. Use `resolveSourceIds(client, notebookId, sourceIds)` instead of inlining the "all sources of the notebook" expansion.
+1. **Tool Addition**: Define new tools in `src/tools/` with the project's `registerTools` abstraction. Give each a `title`, MCP `annotations` (`READ_ONLY` / `CREATES` / `UPDATES` / `DESTROYS` from `src/tools/index.ts`) and a description that says what it returns; `src/__tests__/tools-metadata.test.ts` enforces this. Use `resolveSourceIds(client, notebookId, sourceIds)` instead of inlining the "all sources of the notebook" expansion.
 2. **Schema Validation**: Every tool input MUST be validated using `zod`.
 3. **Error Handling**:
    - Use `AuthenticationError` for session expirations (still exported from `src/client.ts`).
    - Tool results should be returned as `ToolResult` to maintain MCP compliance.
    - To request a client re-init after auth changes, return `clientResetSignal({...})` from a tool — do not write the legacy `_client_action: "reset"` string by hand.
 4. **RPC Integration**: New NotebookLM features require identifying the corresponding `rpcId` in `src/constants.ts`, calling it via `this.transport.callBatchexecute(...)` from a method on `NotebookLMClient`, and exposing a tool wrapper in `src/tools/`.
-5. **Filesystem boundaries**: any tool that reads a user-provided path MUST validate the path against `resolveAllowedReadPath` (currently used by `notebook_add_text`). The allowed roots are `process.cwd()` and `os.tmpdir()`.
+5. **Filesystem boundaries**: any tool that reads a user-provided path MUST validate the path against `resolveAllowedReadPath` (currently used by `source_add_text`). The allowed roots are `process.cwd()` and `os.tmpdir()`.
 
 ### Technical Integrity
 - **Statelessness**: The MCP server itself should remain largely stateless, delegating state management to the NotebookLM backend and the local `auth.json` cache.
 - **Timeouts**: Use `EXTENDED_TIMEOUT` (defined in `constants.ts`) for long-running operations like studio artifact generation or deep research.
-- **Citations**: When implementing query tools, ensure that citations and source references are preserved and accurately mapped.
+- **Citations**: `notebook_query` returns the answer text with NotebookLM's bracketed citation numbers, but not the passage each number maps to. Do not describe it as returning citations until that mapping is parsed from the wire.
 
 ## File Map (Key Files)
 - `src/client.ts`: Domain facade — `NotebookLMClient`. Composes the `rpc/*` collaborators; one public method per Google capability.

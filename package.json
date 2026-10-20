@@ -1,7 +1,7 @@
 {
   "name": "@m4ykeldev/notebooklm-mcp",
   "version": "0.3.2",
-  "description": "MCP server for Google NotebookLM — 32 tools for notebooks, sources, research, and studio content generation",
+  "description": "MCP server for Google NotebookLM — 27 tools for notebooks, sources, research, and studio content generation",
   "type": "module",
   "bin": {
     "notebooklm-mcp": "dist/cli.js"

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -79,36 +79,48 @@ describe("notebookTools", () => {
     expect(result.message).toContain("X");
   });
 
-  it("notebook_get and notebook_describe pass through", async () => {
+  it("notebook_get and notebook_summarize pass through", async () => {
     const client = {
       getNotebook: vi.fn().mockResolvedValue({ id: "n1", sources: [] }),
-      describeNotebook: vi.fn().mockResolvedValue("summary text"),
+      describeNotebook: vi.fn().mockResolvedValue({ summary: "summary text", suggested_questions: ["Q?"] }),
     };
     const gotten = await findTool(notebookTools, "notebook_get").execute(
       client,
       { notebook_id: "n1" },
       noopOpts(),
     );
-    const described = await findTool(notebookTools, "notebook_describe").execute(
+    const described = await findTool(notebookTools, "notebook_summarize").execute(
       client,
       { notebook_id: "n1" },
       noopOpts(),
     );
     expect(gotten.notebook.id).toBe("n1");
     expect(described.summary).toBe("summary text");
+    expect(described.suggested_questions).toEqual(["Q?"]);
   });
 });
 
 describe("sourceTools", () => {
-  it("source_describe calls getSource", async () => {
+  it("source_get calls getSource", async () => {
     const client = { getSource: vi.fn().mockResolvedValue({ id: "s1", content: "c" }) };
-    const result = await findTool(sourceTools, "source_describe").execute(
+    const result = await findTool(sourceTools, "source_get").execute(
       client,
       { notebook_id: "n1", source_id: "s1" },
       noopOpts(),
     );
     expect(client.getSource).toHaveBeenCalledWith("s1", "n1");
     expect(result.source.id).toBe("s1");
+  });
+
+  it("source_get leaves the full text to source_get_content", async () => {
+    // getSource never fills summary/keywords (the source-guide RPC is not wired), so they are not echoed.
+    const client = { getSource: vi.fn().mockResolvedValue({ id: "s1", title: "T", type: "pdf", content: "x".repeat(5000), summary: null, keywords: [] }) };
+    const result = await findTool(sourceTools, "source_get").execute(
+      client,
+      { notebook_id: "n1", source_id: "s1" },
+      noopOpts(),
+    );
+    expect(result.source).toEqual({ id: "s1", title: "T", type: "pdf", content_length: 5000 });
   });
 
   it("source_get_content returns text from source", async () => {
@@ -121,18 +133,20 @@ describe("sourceTools", () => {
     expect(result.text).toBe("body");
   });
 
-  it("notebook_add_url calls addUrlSource", async () => {
-    const client = { addUrlSource: vi.fn().mockResolvedValue(undefined) };
-    const result = await findTool(sourceTools, "notebook_add_url").execute(
+  it("source_add_url returns the created source", async () => {
+    const created = { id: "s9", title: "X", type: "web_page" };
+    const client = { addUrlSource: vi.fn().mockResolvedValue(created) };
+    const result = await findTool(sourceTools, "source_add_url").execute(
       client,
       { notebook_id: "n1", url: "https://x" },
       noopOpts(),
     );
     expect(client.addUrlSource).toHaveBeenCalledWith("n1", "https://x");
+    expect(result.source).toEqual(created);
     expect(result.message).toBe("URL source added");
   });
 
-  describe("notebook_add_text", () => {
+  describe("source_add_text", () => {
     let tempDir: string;
     beforeEach(() => {
       tempDir = mkdtempSync(join(tmpdir(), "notebooklm-add-text-"));
@@ -141,21 +155,23 @@ describe("sourceTools", () => {
       rmSync(tempDir, { recursive: true, force: true });
     });
 
-    it("uses inline content when provided", async () => {
-      const client = { addTextSource: vi.fn().mockResolvedValue(undefined) };
-      await findTool(sourceTools, "notebook_add_text").execute(
+    it("uses inline content when provided and returns the created source", async () => {
+      const created = { id: "s8", title: "T", type: "pasted_text" };
+      const client = { addTextSource: vi.fn().mockResolvedValue(created) };
+      const result = await findTool(sourceTools, "source_add_text").execute(
         client,
         { notebook_id: "n1", content: "hello", title: "T" },
         noopOpts(),
       );
       expect(client.addTextSource).toHaveBeenCalledWith("n1", "hello", "T");
+      expect(result.source).toEqual(created);
     });
 
     it("reads content from file_path when content omitted", async () => {
       const filePath = join(tempDir, "src.txt");
       writeFileSync(filePath, "from-file");
       const client = { addTextSource: vi.fn().mockResolvedValue(undefined) };
-      await findTool(sourceTools, "notebook_add_text").execute(
+      await findTool(sourceTools, "source_add_text").execute(
         client,
         { notebook_id: "n1", file_path: filePath, title: "T" },
         noopOpts(),
@@ -166,7 +182,7 @@ describe("sourceTools", () => {
     it("throws when neither content nor file_path given", async () => {
       const client = { addTextSource: vi.fn() };
       await expect(
-        findTool(sourceTools, "notebook_add_text").execute(
+        findTool(sourceTools, "source_add_text").execute(
           client,
           { notebook_id: "n1", title: "T" },
           noopOpts(),
@@ -178,9 +194,23 @@ describe("sourceTools", () => {
       const client = { addTextSource: vi.fn() };
       // /etc/passwd is outside both cwd and tmpdir on every test host.
       await expect(
-        findTool(sourceTools, "notebook_add_text").execute(
+        findTool(sourceTools, "source_add_text").execute(
           client,
           { notebook_id: "n1", file_path: "/etc/passwd", title: "T" },
+          noopOpts(),
+        ),
+      ).rejects.toThrow(/outside the allowed roots/);
+      expect(client.addTextSource).not.toHaveBeenCalled();
+    });
+
+    it("rejects a symlink inside an allowed root that points outside it", async () => {
+      const link = join(tempDir, "innocent.txt");
+      symlinkSync("/etc/passwd", link);
+      const client = { addTextSource: vi.fn() };
+      await expect(
+        findTool(sourceTools, "source_add_text").execute(
+          client,
+          { notebook_id: "n1", file_path: link, title: "T" },
           noopOpts(),
         ),
       ).rejects.toThrow(/outside the allowed roots/);
@@ -190,7 +220,7 @@ describe("sourceTools", () => {
     it("rejects relative traversal that escapes cwd", async () => {
       const client = { addTextSource: vi.fn() };
       await expect(
-        findTool(sourceTools, "notebook_add_text").execute(
+        findTool(sourceTools, "source_add_text").execute(
           client,
           {
             notebook_id: "n1",
@@ -208,7 +238,7 @@ describe("sourceTools", () => {
       const filePath = join(tempDir, "src.txt");
       writeFileSync(filePath, "from-tmp");
       const client = { addTextSource: vi.fn().mockResolvedValue(undefined) };
-      await findTool(sourceTools, "notebook_add_text").execute(
+      await findTool(sourceTools, "source_add_text").execute(
         client,
         { notebook_id: "n1", file_path: filePath, title: "T" },
         noopOpts(),
@@ -217,9 +247,10 @@ describe("sourceTools", () => {
     });
   });
 
-  it("notebook_add_drive calls addDriveSource with all args", async () => {
-    const client = { addDriveSource: vi.fn().mockResolvedValue(undefined) };
-    await findTool(sourceTools, "notebook_add_drive").execute(
+  it("source_add_drive calls addDriveSource with all args and returns the source", async () => {
+    const created = { id: "s7", title: "T", type: "google_doc" };
+    const client = { addDriveSource: vi.fn().mockResolvedValue(created) };
+    const driveResult = await findTool(sourceTools, "source_add_drive").execute(
       client,
       {
         notebook_id: "n1",
@@ -235,6 +266,7 @@ describe("sourceTools", () => {
       "T",
       "application/vnd.google-apps.document",
     );
+    expect(driveResult.source).toEqual(created);
   });
 
   it("source_sync_drive gates on confirm", async () => {
@@ -491,9 +523,9 @@ describe("researchTools", () => {
 describe("authTools", () => {
   beforeEach(() => vi.mocked(saveTokens).mockClear());
 
-  it("refresh_auth delegates to client.refreshAuth", async () => {
+  it("auth_refresh delegates to client.refreshAuth", async () => {
     const client = { refreshAuth: vi.fn().mockResolvedValue(undefined) };
-    const result = await findTool(authTools, "refresh_auth").execute(
+    const result = await findTool(authTools, "auth_refresh").execute(
       client,
       {},
       noopOpts(),
@@ -502,12 +534,12 @@ describe("authTools", () => {
     expect(result.message).toContain("refreshed");
   });
 
-  it("save_auth_tokens parses cookie string and emits _client_action=reset", async () => {
+  it("auth_save_tokens parses cookie string and emits _client_action=reset", async () => {
     const client = {};
-    const result = await findTool(authTools, "save_auth_tokens").execute(
+    const result = await findTool(authTools, "auth_save_tokens").execute(
       client,
       {
-        cookies: "SID=a; HSID=b; EXTRA=x",
+        cookies: "SID=a; HSID=b; SSID=c; APISID=d; SAPISID=e; EXTRA=x",
         csrf_token: "csrf",
         session_id: "sid",
       },
@@ -515,32 +547,32 @@ describe("authTools", () => {
     );
     expect(saveTokens).toHaveBeenCalledOnce();
     const [savedTokens] = vi.mocked(saveTokens).mock.calls[0];
-    expect(savedTokens.cookies).toEqual({ SID: "a", HSID: "b", EXTRA: "x" });
+    expect(savedTokens.cookies).toEqual({ SID: "a", HSID: "b", SSID: "c", APISID: "d", SAPISID: "e", EXTRA: "x" });
     expect(savedTokens.csrf_token).toBe("csrf");
     expect(savedTokens.session_id).toBe("sid");
     expect(result._client_action).toBe("reset");
   });
 
-  it("save_auth_tokens accepts empty cookie string", async () => {
-    const result = await findTool(authTools, "save_auth_tokens").execute(
-      {},
-      {},
-      noopOpts(),
+  it.each([
+    ["no cookies at all", {}],
+    ["an empty cookie string", { cookies: "" }],
+    ["cookies missing required ones", { cookies: "SID=a; HSID=b" }],
+  ])("auth_save_tokens refuses %s and keeps the stored session", async (_label, args) => {
+    // Saving would overwrite ~/.notebooklm-mcp/auth.json and sign the user out.
+    await expect(findTool(authTools, "auth_save_tokens").execute({}, args, noopOpts())).rejects.toThrow(
+      /SAPISID/,
     );
-    expect(saveTokens).toHaveBeenCalledOnce();
-    const [savedTokens] = vi.mocked(saveTokens).mock.calls[0];
-    expect(savedTokens.cookies).toEqual({});
-    expect(result._client_action).toBe("reset");
+    expect(saveTokens).not.toHaveBeenCalled();
   });
 
-  it("save_auth_tokens skips cookie segments with no '=' separator", async () => {
-    await findTool(authTools, "save_auth_tokens").execute(
+  it("auth_save_tokens skips cookie segments with no '=' separator", async () => {
+    await findTool(authTools, "auth_save_tokens").execute(
       {},
-      { cookies: "SID=a; ORPHAN; HSID=b" },
+      { cookies: "SID=a; ORPHAN; HSID=b; SSID=c; APISID=d; SAPISID=e" },
       noopOpts(),
     );
     const [savedTokens] = vi.mocked(saveTokens).mock.calls[0];
-    expect(savedTokens.cookies).toEqual({ SID: "a", HSID: "b" });
+    expect(savedTokens.cookies).toEqual({ SID: "a", HSID: "b", SSID: "c", APISID: "d", SAPISID: "e" });
     expect(savedTokens.cookies.ORPHAN).toBeUndefined();
   });
 });

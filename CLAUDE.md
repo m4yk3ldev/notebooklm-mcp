@@ -88,11 +88,15 @@ Each tool file exports an array of `McpTool` objects:
 ```typescript
 export const myTools: McpTool<typeof schema>[] = [{
   name: "tool_name",
-  description: "...",
-  schema: { param: z.string() },  // zod schema — omit for no-arg tools
+  title: "Human-readable name",
+  description: "What it does. Returns ... When to use it vs related tools.",
+  annotations: READ_ONLY,  // or CREATES / UPDATES / DESTROYS (src/tools/index.ts)
+  schema: { param: z.string().describe("...") },  // zod schema — omit for no-arg tools
   execute: async (client, args, opts) => { ... }
 }];
 ```
+
+`src/__tests__/tools-metadata.test.ts` enforces the catalog rules: every tool has a title, full annotations, a description of at least 120 characters that says what it returns, and a description on every parameter; tools taking `confirm` say so and are not read-only; `*_delete` tools are destructive. Directories such as Glama grade these descriptions (one-liners scored C). Shared parameter wording lives in `PARAM` in `src/tools/index.ts`. The server's cross-tool workflow guidance is `SERVER_INSTRUCTIONS` in `src/server.ts`, sent to clients at initialization; the reported server version comes from `package.json` (`src/version.ts`).
 
 `registerTools()` in `src/tools/index.ts` loops over these, registers them on the `McpServer`, and wraps execution with error handling. Tool results are returned as JSON with a `status` field. Use `{ _client_action: "reset" }` in a result to trigger client re-initialization (used after auth changes).
 

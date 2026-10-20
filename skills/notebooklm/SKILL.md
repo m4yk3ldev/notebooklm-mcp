@@ -1,6 +1,6 @@
 ---
 name: notebooklm
-description: Drive Google NotebookLM from the agent through the notebooklm-mcp server — create and manage notebooks, add sources (URLs, text, local files, Google Drive), ask grounded questions with citations, run web/Drive research, and generate Studio content (audio overviews, video overviews, slide decks, reports, infographics, flashcards, quizzes). Use when the user mentions NotebookLM, a notebook of sources, "ask my sources", source-grounded answers, a podcast/audio overview, study guides, flashcards or quizzes from documents, or wants research collected into a notebook.
+description: Drive Google NotebookLM from the agent through the notebooklm-mcp server — create and manage notebooks, add sources (URLs, text, local files, Google Drive), ask questions answered only from those sources, run web/Drive research, and generate Studio content (audio overviews, video overviews, slide decks, reports, infographics, flashcards, quizzes). Use when the user mentions NotebookLM, a notebook of sources, "ask my sources", source-grounded answers, a podcast/audio overview, study guides, flashcards or quizzes from documents, or wants research collected into a notebook.
 ---
 
 # NotebookLM via MCP
@@ -48,12 +48,13 @@ The authentication step needs the user at a browser. Ask them to run it; do not 
 
 1. **Find or create the notebook.** `notebook_list` returns IDs, titles and source counts. Match by title before creating a duplicate. `notebook_create` returns the new ID.
 2. **Add sources.**
-   - `notebook_add_url` — web pages and YouTube links.
-   - `notebook_add_text` — pass `content` inline, or `file_path` for a local file. `file_path` must sit under the server's working directory or the OS temp dir; for anything else, read the file and pass `content`.
-   - `notebook_add_drive` — needs the Drive `file_id`, a `title` and the MIME `doc_type` (e.g. `application/vnd.google-apps.document`).
-   - Sources take a moment to process. Check with `notebook_get` before querying a source you just added.
-3. **Ask questions.** `notebook_query` answers only from the notebook's sources, using all of them by default. Restrict with `source_ids` when the user cares about specific documents. For follow-ups, pass back the returned `conversation_id` so NotebookLM keeps context.
-4. **Produce output** with the Studio tools (below), or summarise with `notebook_describe`.
+   - `source_add_url` — web pages and YouTube links.
+   - `source_add_text` — pass `content` inline, or `file_path` for a local file. `file_path` must sit under the server's working directory or the OS temp dir; for anything else, read the file and pass `content`.
+   - `source_add_drive` — needs the Drive `file_id`, a `title` and the MIME `doc_type` (e.g. `application/vnd.google-apps.document`).
+   - Each of these returns the new source's `id`. Sources take a moment to process; check with `notebook_get` before querying one you just added.
+   - If `source_add_url` says NotebookLM could not fetch the page, check `notebook_get` before retrying: the source is sometimes listed anyway.
+3. **Ask questions.** `notebook_query` answers only from the notebook's sources, using all of them by default. Restrict with `source_ids` when the user cares about specific documents. For follow-ups, pass back the returned `conversation_id` so the follow-up keeps context (the server remembers the conversation while it keeps running).
+4. **Produce output** with the Studio tools (below), or summarise with `notebook_summarize`.
 
 Prefer `notebook_query` over reading raw sources. Use `source_get_content` only when the user needs the verbatim text of a source.
 
@@ -86,13 +87,13 @@ After starting one, poll `studio_status` with the returned `artifact_id`. Each a
 
 ## Housekeeping
 
-- `notebook_rename`, `notebook_get` (sources and their IDs), `source_describe` (one source's metadata).
+- `notebook_rename`, `notebook_get` (sources and their IDs), `source_get` (one source's metadata).
 - `source_sync_drive` re-pulls the latest version of Drive sources.
 - `notebook_delete` and `source_delete` are permanent and need `confirm: true`. Name the exact notebook or source and get explicit approval from the user first.
 
 ## When things fail
 
-- **Auth errors** (expired session, 401/403): call `refresh_auth` once. The server also tries to restore the session in the background. If it still fails, or the error says the session is signed out (redirected to Google sign-in, no CSRF token), ask the user to run `npx -y @m4ykeldev/notebooklm-mcp auth` again, then retry.
+- **Auth errors** (expired session, 401/403): call `auth_refresh` once. The server also tries to restore the session in the background. If it still fails, or the error says the session is signed out (redirected to Google sign-in, no CSRF token), ask the user to run `npx -y @m4ykeldev/notebooklm-mcp auth` again, then retry.
 - **Timeouts on `notebook_query`**: suggest raising `--query-timeout`, or narrow the question with `source_ids`.
 - **Unexpected or empty responses**: Google changes NotebookLM's internal API without notice. Report the error to the user rather than retrying in a loop, and suggest updating the package (`npx -y @m4ykeldev/notebooklm-mcp@latest serve`) or opening an issue on the GitHub repo.
-- `save_auth_tokens` is a manual fallback for cookies. Use it only when the user hands you cookies explicitly, and never echo cookie values back in chat.
+- `auth_save_tokens` is a manual fallback for cookies. Use it only when the user hands you cookies explicitly, and never echo cookie values back in chat.
