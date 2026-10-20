@@ -20,7 +20,7 @@ concurrency:
 jobs:
   secret-scan:
     name: Secret scan (gitleaks)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -67,14 +67,14 @@ jobs:
 
   audit:
     name: Supply-chain audit (pnpm)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [secret-scan]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.33.0
+      # v6 runs on Node 24 (v4 targeted the deprecated Node 20 runtime) and
+      # reads the pnpm version from package.json#packageManager.
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
           # npm >= 9.5 still required on PATH for `npm audit signatures`
@@ -87,7 +87,7 @@ jobs:
 
   osv-scan:
     name: Dependency audit (osv-scanner)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [secret-scan]
     timeout-minutes: 5
     steps:
@@ -104,7 +104,7 @@ jobs:
 
   test:
     name: Run Tests (Node ${{ matrix.node }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [audit, osv-scan]
     timeout-minutes: 10
     strategy:
@@ -114,9 +114,9 @@ jobs:
         node: ['20', '22', '24']
     steps:
       - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.33.0
+      # v6 runs on Node 24 (v4 targeted the deprecated Node 20 runtime) and
+      # reads the pnpm version from package.json#packageManager.
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.node }}
@@ -129,16 +129,16 @@ jobs:
     name: Publish to NPM
     needs: [test]
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       id-token: write
       contents: write
     steps:
       - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.33.0
+      # v6 runs on Node 24 (v4 targeted the deprecated Node 20 runtime) and
+      # reads the pnpm version from package.json#packageManager.
+      - uses: pnpm/action-setup@v6
       # Do NOT pass registry-url: setup-node would write an
       # .npmrc with _authToken=${NODE_AUTH_TOKEN}, and a stale
       # NPM_TOKEN secret would sabotage OIDC. publishConfig.registry
@@ -153,7 +153,7 @@ jobs:
       - run: pnpm run build
       - run: pnpm publish --access public --no-git-checks
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
