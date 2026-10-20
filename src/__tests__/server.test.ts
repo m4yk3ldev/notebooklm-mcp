@@ -1,11 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { registerToolSpy, McpServerCtor } = vi.hoisted(() => {
+const { registerToolSpy, McpServerCtor, ctorCalls } = vi.hoisted(() => {
   const registerToolSpy = vi.fn();
+  const ctorCalls: any[][] = [];
   class McpServerCtor {
     registerTool = registerToolSpy;
+    constructor(...args: any[]) {
+      ctorCalls.push(args);
+    }
   }
-  return { registerToolSpy, McpServerCtor };
+  return { registerToolSpy, McpServerCtor, ctorCalls };
 });
 
 const { clientInstances, NotebookLMClientCtor } = vi.hoisted(() => {
@@ -70,6 +74,18 @@ beforeEach(() => {
 });
 
 describe("createServer", () => {
+  it("reports the package version and publishes usage instructions", async () => {
+    const { readFileSync } = await import("node:fs");
+    const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
+    ctorCalls.length = 0;
+    const { createServer } = await freshServerModule();
+    createServer();
+    const [info, options] = ctorCalls[0];
+    expect(info).toEqual({ name: "notebooklm", version: pkg.version });
+    expect(options.instructions).toMatch(/notebook_list/);
+    expect(options.instructions).toMatch(/confirm/);
+  });
+
   it("constructs an McpServer and registers every tool exactly once", async () => {
     const { createServer } = await freshServerModule();
     const server = createServer();
