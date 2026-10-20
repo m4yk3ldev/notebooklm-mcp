@@ -686,7 +686,7 @@ Once wired up, your AI can drive NotebookLM end-to-end with natural language. Th
 
 ## 🛠 Complete Tool Reference (27)
 
-Every tool carries a title, a description of what it returns, and MCP annotations (read-only, destructive, idempotent), so clients can tell safe lookups from changes. The server also sends usage instructions at initialization.
+Every tool carries a title, a description of what it returns, and MCP annotations (read-only, destructive, idempotent), so clients can tell safe lookups from changes. Since v0.5.0 each tool also publishes an `outputSchema` and returns its result as `structuredContent` (typed fields) alongside the usual JSON text. The server also sends usage instructions at initialization.
 
 > **Renamed in v0.4.0.** Tool names now follow one `resource_action` scheme. If your client allow-lists tools by name (e.g. `mcp__notebooklm__notebook_add_url` in Claude Code permissions), update it:
 >
@@ -701,7 +701,7 @@ Every tool carries a title, a description of what it returns, and MCP annotation
 
 | Tool                | Description                                                                                     |
 | :------------------ | :---------------------------------------------------------------------------------------------- |
-| `notebook_list`     | Get an overview of all your notebooks, including titles, source counts, and ownership metadata. |
+| `notebook_list`     | Get an overview of your notebooks (titles, sources, ownership), up to `max_results` (default 100). |
 | `notebook_create`   | Create a new NotebookLM project instantly from your terminal or AI assistant.                   |
 | `notebook_get`      | Retrieve deep metadata and a full list of sources for a specific notebook.                      |
 | `notebook_summarize` | Get an AI-generated summary of the notebook plus the questions NotebookLM suggests asking.      |

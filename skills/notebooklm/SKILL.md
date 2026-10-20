@@ -46,7 +46,7 @@ The authentication step needs the user at a browser. Ask them to run it; do not 
 
 ## Core workflow
 
-1. **Find or create the notebook.** `notebook_list` returns IDs, titles and source counts. Match by title before creating a duplicate. `notebook_create` returns the new ID.
+1. **Find or create the notebook.** `notebook_list` returns IDs, titles and sources, up to `max_results` (default 100); if the count reaches it, call again with a higher value. Match by title before creating a duplicate. `notebook_create` returns the new ID.
 2. **Add sources.**
    - `source_add_url` — web pages and YouTube links.
    - `source_add_text` — pass `content` inline, or `file_path` for a local file. `file_path` must sit under the server's working directory or the OS temp dir; for anything else, read the file and pass `content`.
@@ -83,7 +83,7 @@ Every generator needs `confirm: true`. These consume the user's NotebookLM quota
 
 All accept `source_ids` to limit which sources are used (omit for all). `language` is a BCP-47 code such as `en` or `es`; without it NotebookLM uses the account's language.
 
-After starting one, poll `studio_status` with the returned `artifact_id`. Each artifact reports `pending`, `generating`, `completed` or `failed`. Audio, video, infographics and slide decks (as PDF) get a `download_url` once completed. Give the user the URL; the download needs their Google session, so it opens in their browser. Reports, flashcards and quizzes have no file: point the user to the notebook in NotebookLM to read them.
+After starting one, poll `studio_status` for the notebook and find the artifact by the returned `artifact_id`: it lists older artifacts too. Each artifact reports `pending`, `generating`, `completed` or `failed`. Audio, video, infographics and slide decks (as PDF) get a `download_url` once completed. Give the user the URL; the download needs their Google session, so it opens in their browser. Reports, flashcards and quizzes have no file: point the user to the notebook in NotebookLM to read them.
 
 ## Housekeeping
 
