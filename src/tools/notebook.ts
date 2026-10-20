@@ -81,8 +81,8 @@ export const notebookTools: McpTool<any>[] = [
     name: "notebook_rename",
     title: "Rename notebook",
     description:
-      "Change a notebook's title; its sources, notes and chat stay as they are. Returns a confirmation message with " +
-      "the new title. Find the notebook_id with notebook_list first.",
+      "Change a notebook's title; its sources and chat stay as they are. Returns a confirmation message with the " +
+      "new title. Find the notebook_id with notebook_list first.",
     annotations: UPDATES,
     schema: {
       notebook_id: z.string().describe(PARAM.notebookId),
